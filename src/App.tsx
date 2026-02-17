@@ -1,37 +1,24 @@
-import {
-  Routes,
-  Route,
-  Navigate,
-} from "react-router-dom";
-
-import {
-  lazy,
-  Suspense,
-} from "react";
-
-import GlobalLoader from "./components/GlobalLoader";
-import { useAuth } from "./context/AuthContext";
-
-import Layout from "./components/Layout";
-import PrivateRoute from "./components/PrivateRoute";
-import AdminRoute from "./components/AdminRoutes"; // ✅ FIXED NAME
-
-/* Lazy Pages */
-const Auth = lazy(() => import("./pages/Auth"));
-const Dashboard = lazy(
-  () => import("./pages/Dashboard")
-);
-const Profile = lazy(
-  () => import("./pages/Profile")
-);
-const Users = lazy(
-  () => import("./pages/Users")
-);
-
-const Settings = lazy(() => import("./pages/Settings"));
-
 export default function App() {
   const { loading } = useAuth();
+
+  /* ================= AUTO REFRESH TOKEN ================= */
+  useEffect(() => {
+    const refreshAccessToken = async () => {
+      try {
+        const res = await axios.post(
+          `${import.meta.env.VITE_API_URL}/refresh`,
+          {},
+          { withCredentials: true }
+        );
+
+        setToken(res.data.accessToken);
+      } catch (err) {
+        console.log("No refresh token available");
+      }
+    };
+
+    refreshAccessToken();
+  }, []);
 
   return (
     <>
@@ -49,10 +36,7 @@ export default function App() {
         <Routes>
 
           {/* ================= PUBLIC ================= */}
-          <Route
-            path="/"
-            element={<Auth />}
-          />
+          <Route path="/" element={<Auth />} />
 
           {/* ================= PROTECTED ================= */}
           <Route
@@ -62,20 +46,9 @@ export default function App() {
               </PrivateRoute>
             }
           >
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/dashboard/profile" element={<Profile />} />
 
-            {/* Dashboard */}
-            <Route
-              path="/dashboard"
-              element={<Dashboard />}
-            />
-
-            {/* Profile */}
-            <Route
-              path="/dashboard/profile"
-              element={<Profile />}
-            />
-
-            {/* Admin → Users */}
             <Route
               path="/dashboard/users"
               element={
@@ -89,19 +62,12 @@ export default function App() {
               path="/dashboard/settings"
               element={<Settings />}
             />
-
-
           </Route>
 
           {/* ================= FALLBACK ================= */}
           <Route
             path="*"
-            element={
-              <Navigate
-                to="/dashboard"
-                replace
-              />
-            }
+            element={<Navigate to="/dashboard" replace />}
           />
 
         </Routes>
