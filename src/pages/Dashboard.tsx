@@ -101,18 +101,25 @@ export default function Dashboard() {
 
   /* ================= LOAD CHART ================= */
 
-  useEffect(() => {
-  api
-    .get("/user-stats", {
-      params: {
-        range,
-        from: fromDate,
-        to: toDate,
-        type: userType,
-      },
-    })
-    .then((res) => setChartData(res.data))
-    .catch(() => console.log("Chart load failed"));
+useEffect(() => {
+  const loadChart = async () => {
+    try {
+      const res = await api.get("/user-stats", {
+        params: {
+          range,
+          from: fromDate || undefined,
+          to: toDate || undefined,
+          type: userType !== "all" ? userType : undefined,
+        },
+      });
+
+      setChartData(res.data);
+    } catch (err) {
+      console.error("Chart load failed", err);
+    }
+  };
+
+  loadChart();
 }, [range, fromDate, toDate, userType]);
 
 
@@ -442,4 +449,5 @@ function InfoCard({ title, value, color, sub, icon }: any) {
     </div>
   );
 }
+
 
