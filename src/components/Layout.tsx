@@ -16,7 +16,8 @@ import {
   Settings,
   LogOut,
   Menu,
-  X
+  X, 
+  Mail
 } from "lucide-react";
 import {
   doc,
@@ -475,4 +476,5 @@ function MenuItem({
     </button>
   );
 }
+
 
