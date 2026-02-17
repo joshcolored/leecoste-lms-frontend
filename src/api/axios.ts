@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL, // already ends with /api
+  baseURL: import.meta.env.VITE_API_URL,
   withCredentials: true,
 });
 
@@ -13,7 +13,7 @@ export const setToken = (token: string) => {
 
 api.interceptors.request.use((config) => {
   if (accessToken) {
-    config.headers.Authorization = `Bearer ${accessToken}`;
+    config.headers.Authorization = accessToken;
   }
   return config;
 });
@@ -26,18 +26,17 @@ api.interceptors.response.use(
     if (err.response?.status === 401 && !original._retry) {
       original._retry = true;
 
-      try {
-        // ✅ IMPORTANT: use api instance
-        const res = await api.post("/refresh");
+      const res = await axios.post(
+        `${api.defaults.baseURL}/refresh`,
+        {},
+        { withCredentials: true }
+      );
 
-        setToken(res.data.accessToken);
+      setToken(res.data.accessToken);
 
-        original.headers.Authorization = `Bearer ${res.data.accessToken}`;
+      original.headers.Authorization = res.data.accessToken;
 
-        return api(original);
-      } catch (refreshError) {
-        return Promise.reject(refreshError);
-      }
+      return api(original);
     }
 
     return Promise.reject(err);
