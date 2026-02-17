@@ -10,7 +10,6 @@ import {
   useEffect,
 } from "react";
 
-import api, { setToken } from "./api/axios";
 
 import GlobalLoader from "./components/GlobalLoader";
 import { useAuth } from "./context/AuthContext";
@@ -29,19 +28,6 @@ const Settings = lazy(() => import("./pages/Settings"));
 export default function App() {
   const { loading } = useAuth();
 
-  /* ================= AUTO REFRESH TOKEN ================= */
-  useEffect(() => {
-  const refreshAccessToken = async () => {
-    try {
-      const res = await api.post("/refresh");
-      setToken(res.data.accessToken);
-    } catch {
-      console.log("No refresh token");
-    }
-  };
-
-  refreshAccessToken();
-}, []);
 
   return (
     <>
