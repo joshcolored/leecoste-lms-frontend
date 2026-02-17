@@ -2,7 +2,6 @@ import {
   collection,
   addDoc,
   updateDoc,
-  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -16,7 +15,7 @@ import {
 import { getAuth } from "firebase/auth";
 import { db } from "../firebase";
 import { useEffect, useState, useRef } from "react";
-import { Send, Trash2, Smile } from "lucide-react";
+import { Send } from "lucide-react";
 
 /* ================= TYPES ================= */
 
