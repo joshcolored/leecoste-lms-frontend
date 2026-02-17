@@ -23,6 +23,9 @@ const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Profile = lazy(() => import("./pages/Profile"));
 const Users = lazy(() => import("./pages/Users"));
 const Settings = lazy(() => import("./pages/Settings"));
+const Messages = lazy(
+  () => import("./pages/Messages")
+);
 
 export default function App() {
   const { loading } = useAuth();
@@ -76,7 +79,13 @@ export default function App() {
                 </AdminRoute>
               }
             />
-
+              {/* Admin → Messages */}
+              <Route
+              path="/dashboard/messages"
+              element={
+                  <Messages />
+              }
+            />
             {/* Settings */}
             <Route
               path="/dashboard/settings"
