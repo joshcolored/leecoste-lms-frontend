@@ -352,7 +352,7 @@ export default function Dashboard() {
               <Bar
                 dataKey="users"
                 stackId="a"
-                fill="#4f46e5"
+                fill="var(--brand-color)"
                 animationDuration={800}
               />
             </BarChart>
@@ -430,3 +430,4 @@ function InfoCard({ title, value, color, icon, growth }: any) {
     </div>
   );
 }
+
