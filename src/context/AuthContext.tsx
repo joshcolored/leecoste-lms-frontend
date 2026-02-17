@@ -34,6 +34,9 @@ import {
 
 import { auth, db } from "../firebase";
 
+/* 🔥 IMPORT YOUR API INSTANCE */
+import api, { setToken } from "../api/axios";
+
 /* ================= TYPES ================= */
 
 export type UserRole = "admin" | "broker" | "client";
@@ -61,138 +64,71 @@ interface AuthContextType {
 
 /* ================= CONTEXT ================= */
 
-const AuthContext = createContext<AuthContextType | null>(
-  null
-);
+const AuthContext = createContext<AuthContextType | null>(null);
 
 /* ================= PROVIDER ================= */
 
-export function AuthProvider({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<UserRole | null>(null);
   const [loading, setLoading] = useState(true);
 
-  /* Session listener */
-  const sessionUnsub = useRef<(() => void) | null>(
-    null
-  );
+  const sessionUnsub = useRef<(() => void) | null>(null);
 
   /* ================= AUTH LISTENER ================= */
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(
-      auth,
-      async (firebaseUser) => {
-
-        setLoading(true);
-
-        /* Cleanup old session listener */
-        if (sessionUnsub.current) {
-          sessionUnsub.current();
-          sessionUnsub.current = null;
-        }
-
-        /* Not logged in */
-        if (!firebaseUser) {
-          setUser(null);
-          setRole(null);
-          setLoading(false);
-          return;
-        }
-
-        try {
-          /* Load profile */
-          const snap = await getDoc(
-            doc(db, "users", firebaseUser.uid)
-          );
-
-          if (snap.exists()) {
-            setRole(snap.data().role as UserRole);
-          } else {
-            setRole(null);
-          }
-
-          setUser(firebaseUser);
-
-          /* ================= SESSION WATCH ================= */
-
-          const local =
-            localStorage.getItem("auth_session");
-
-          if (local) {
-
-            const { uid, sessionId } =
-              JSON.parse(local);
-
-            const sessionRef = doc(
-              db,
-              "users",
-              uid,
-              "sessions",
-              sessionId
-            );
-
-            sessionUnsub.current = onSnapshot(
-              sessionRef,
-              (docSnap) => {
-
-                /* 🔴 SESSION DELETED */
-                if (!docSnap.exists()) {
-
-                  console.log("Session deleted remotely");
-
-                  localStorage.removeItem("auth_session");
-
-                  signOut(auth);
-
-                  setUser(null);
-                  setRole(null);
-
-                  return;
-                }
-
-                const data = docSnap.data();
-
-                /* 🔴 SESSION DISABLED */
-                if (data.active === false) {
-
-                  console.log("Session terminated remotely");
-
-                  localStorage.removeItem("auth_session");
-
-                  signOut(auth);
-
-                  setUser(null);
-                  setRole(null);
-                }
-              }
-            );
-          }
-
-        } catch (err) {
-
-          console.error("Auth load error", err);
-
-          setUser(firebaseUser);
-          setRole(null);
-        }
-
-        setLoading(false);
-      }
-    );
-
-    return () => {
-
-      unsubscribe();
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setLoading(true);
 
       if (sessionUnsub.current) {
         sessionUnsub.current();
         sessionUnsub.current = null;
       }
+
+      if (!firebaseUser) {
+        setUser(null);
+        setRole(null);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const snap = await getDoc(doc(db, "users", firebaseUser.uid));
+
+        if (snap.exists()) {
+          setRole(snap.data().role as UserRole);
+        }
+
+        setUser(firebaseUser);
+
+        const local = localStorage.getItem("auth_session");
+
+        if (local) {
+          const { uid, sessionId } = JSON.parse(local);
+
+          const sessionRef = doc(db, "users", uid, "sessions", sessionId);
+
+          sessionUnsub.current = onSnapshot(sessionRef, (docSnap) => {
+            if (!docSnap.exists() || docSnap.data()?.active === false) {
+              localStorage.removeItem("auth_session");
+              signOut(auth);
+              setUser(null);
+              setRole(null);
+            }
+          });
+        }
+
+      } catch (err) {
+        console.error("Auth load error", err);
+      }
+
+      setLoading(false);
+    });
+
+    return () => {
+      unsubscribe();
+      if (sessionUnsub.current) sessionUnsub.current();
     };
   }, []);
 
@@ -204,26 +140,12 @@ export function AuthProvider({
     remember: boolean
   ) => {
 
-    /* ================= SAFE PERSISTENCE ================= */
-
-    try {
-      await setPersistence(
-        auth,
-        remember
-          ? browserLocalPersistence
-          : browserSessionPersistence
-      );
-    } catch (err) {
-
-      console.warn(
-        "Persistence not supported, using default",
-        err
-      );
-
-      // iOS fallback → continue without persistence
-    }
-
-    /* ================= LOGIN ================= */
+    await setPersistence(
+      auth,
+      remember
+        ? browserLocalPersistence
+        : browserSessionPersistence
+    );
 
     const cred = await signInWithEmailAndPassword(
       auth,
@@ -236,7 +158,15 @@ export function AuthProvider({
       throw new Error("Email not verified");
     }
 
-    /* ================= DEVICE INFO ================= */
+    /* 🔥 CALL BACKEND LOGIN TO CREATE COOKIE */
+    const res = await api.post("/login", {
+      email,
+      password,
+    });
+
+    setToken(res.data.accessToken);
+
+    /* ================= CREATE SESSION ================= */
 
     const parser = new UAParser();
     const result = parser.getResult();
@@ -246,8 +176,6 @@ export function AuthProvider({
       os: result.os.name || "Unknown",
       device: result.device.type || "Desktop",
     };
-
-    // /* ================= CREATE SESSION ================= */
 
     const sessionId = CryptoJS.SHA1(
       cred.user.uid + Date.now().toString()
@@ -264,8 +192,6 @@ export function AuthProvider({
       active: true,
     });
 
-    /* ================= SAVE LOCAL ================= */
-
     localStorage.setItem(
       "auth_session",
       JSON.stringify({
@@ -277,7 +203,6 @@ export function AuthProvider({
     );
   };
 
-
   /* ================= REGISTER ================= */
 
   const register = async (
@@ -286,33 +211,30 @@ export function AuthProvider({
     role: UserRole
   ) => {
 
-    const cred =
-      await createUserWithEmailAndPassword(
-        auth,
-        email,
-        password
-      );
-
-    await setDoc(
-      doc(db, "users", cred.user.uid),
-      {
-        email,
-        role,
-        createdAt: serverTimestamp(),
-        lastLogin: serverTimestamp(),
-      }
+    const cred = await createUserWithEmailAndPassword(
+      auth,
+      email,
+      password
     );
 
-    await sendEmailVerification(cred.user);
+    await setDoc(doc(db, "users", cred.user.uid), {
+      email,
+      role,
+      createdAt: serverTimestamp(),
+      lastLogin: serverTimestamp(),
+    });
 
+    await sendEmailVerification(cred.user);
     await signOut(auth);
   };
 
   /* ================= LOGOUT ================= */
 
-  /* ================= LOGOUT ================= */
-
   const logout = async () => {
+
+    try {
+      await api.post("/logout");
+    } catch {}
 
     const session = localStorage.getItem("auth_session");
 
@@ -320,7 +242,6 @@ export function AuthProvider({
       const data = JSON.parse(session);
 
       try {
-        // ✅ DELETE SESSION DOCUMENT
         await deleteDoc(
           doc(
             db,
@@ -330,25 +251,16 @@ export function AuthProvider({
             data.sessionId
           )
         );
-
-        console.log("Session deleted:", data.sessionId);
-
-      } catch (err) {
-        console.warn("Failed to delete session:", err);
-      }
+      } catch {}
     }
 
-    // Clear local session
     localStorage.removeItem("auth_session");
 
-    // Firebase logout
     await signOut(auth);
 
-    // Reset state
     setUser(null);
     setRole(null);
   };
-
 
   /* ================= PROVIDER ================= */
 
@@ -372,12 +284,8 @@ export function AuthProvider({
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
-
   if (!ctx) {
-    throw new Error(
-      "useAuth must be used inside AuthProvider"
-    );
+    throw new Error("useAuth must be used inside AuthProvider");
   }
-
   return ctx;
 }
