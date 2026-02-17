@@ -6,8 +6,6 @@ import {
   Users,
   BadgeCheck,
   BadgeX,
-  // Clock
-
 } from "lucide-react";
 
 import {
@@ -49,79 +47,37 @@ export default function Dashboard() {
 
   const [loading, setLoading] = useState(true);
 
-  // const [sessionType, setSessionType] = useState("Temporary");
-  // const [expiresIn, setExpiresIn] = useState("");
-
   const { role } = useAuth();
 
 
-  /* ================= LOAD STATS ================= */
+  /* ================= LOAD STATS + CHART ================= */
 
   useEffect(() => {
-  api
-    .get("/stats")
-    .then((res) => setStats(res.data))
-    .finally(() => setLoading(false));
-}, []);
+    const loadData = async () => {
+      try {
+        setLoading(true);
 
+        const res = await api.get("/user-stats", {
+          params: {
+            range: range || undefined,
+            from: fromDate || undefined,
+            to: toDate || undefined,
+            type: userType !== "all" ? userType : undefined,
+          },
+        });
 
+        setStats(res.data.summary);
+        setChartData(res.data.chart);
 
-  /* ================= SESSION ================= */
+      } catch (err) {
+        console.error("Dashboard load failed", err);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  // useEffect(() => {
-
-  //   const session = localStorage.getItem("auth_session");
-
-  //   if (!session) return;
-
-  //   const data = JSON.parse(session);
-
-  //   if (data.remember) {
-
-  //     setSessionType("Persistent");
-
-  //     const daysLeft =
-  //       30 -
-  //       Math.floor(
-  //         (Date.now() - data.loginAt) /
-  //         (1000 * 60 * 60 * 24)
-  //       );
-
-  //     setExpiresIn(`${daysLeft} days left`);
-
-  //   } else {
-
-  //     setSessionType("Temporary");
-  //     setExpiresIn("");
-
-  //   }
-
-  // }, []);
-
-
-  /* ================= LOAD CHART ================= */
-
-useEffect(() => {
-  const loadChart = async () => {
-    try {
-      const res = await api.get("/user-stats", {
-        params: {
-          range,
-          from: fromDate || undefined,
-          to: toDate || undefined,
-          type: userType !== "all" ? userType : undefined,
-        },
-      });
-
-      setChartData(res.data);
-    } catch (err) {
-      console.error("Chart load failed", err);
-    }
-  };
-
-  loadChart();
-}, [range, fromDate, toDate, userType]);
-
+    loadData();
+  }, [range, fromDate, toDate, userType]);
 
 
   /* ================= LOADING ================= */
@@ -133,24 +89,21 @@ useEffect(() => {
 
   return (
     <>
-
       {/* ================= HEADER ================= */}
 
       <div className="mb-6">
-
-        <h2 className="text-2xl font-bold" style={{ color: "var(--brand-color)" }}>
+        <h2
+          className="text-2xl font-bold"
+          style={{ color: "var(--brand-color)" }}
+        >
           {role === "admin" && "Admin Dashboard"}
-
           {role === "broker" && "Broker Dashboard"}
-
           {role === "client" && "Client Dashboard"}
         </h2>
-
 
         <p className="text-gray-500 text-sm dark:text-gray-300">
           Your current system overview.
         </p>
-
       </div>
 
 
@@ -158,16 +111,13 @@ useEffect(() => {
 
       <div className="flex flex-wrap gap-3 mb-6 items-center">
 
-
         {/* Range Buttons */}
-
         {[
           { label: "12 months", value: "12m" },
           { label: "30 days", value: "30d" },
           { label: "7 days", value: "7d" },
           { label: "24 hours", value: "24h" },
         ].map((t) => (
-
           <button
             key={t.value}
             onClick={() => {
@@ -177,30 +127,24 @@ useEffect(() => {
             }}
             style={
               range === t.value
-                ? { backgroundColor: "var(--brand-color)", color: "white", borderColor: "var(--brand-color)" }
+                ? {
+                    backgroundColor: "var(--brand-color)",
+                    color: "white",
+                    borderColor: "var(--brand-color)",
+                  }
                 : {}
             }
-            className={`
-    px-3 py-1.5 border border-gray-600 rounded-lg text-sm
-    transition
-    hover:bg-gray-50 dark:hover:bg-neutral-700
-    dark:text-gray-300
-  `}
+            className="px-3 py-1.5 border border-gray-600 rounded-lg text-sm transition hover:bg-gray-50 dark:hover:bg-neutral-700 dark:text-gray-300"
           >
             {t.label}
           </button>
-
-
         ))}
 
 
-        {/* ================= RIGHT SIDE ================= */}
-
+        {/* RIGHT SIDE */}
         <div className="ml-auto flex gap-2 relative">
 
-
           {/* Date Button */}
-
           <button
             onClick={() => setShowDate(!showDate)}
             className="px-3 py-1.5 border border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-neutral-700 dark:text-gray-300"
@@ -210,34 +154,23 @@ useEffect(() => {
               : "Select dates"}
           </button>
 
-
           {/* Date Panel */}
-
           {showDate && (
-            <div
-              className="
-                absolute right-0 top-12 z-30
-                bg-white border border-gray-600 rounded-xl shadow-lg
-                p-4 w-72 dark:bg-neutral-800 dark:border-gray-700
-              "
-            >
-
+            <div className="absolute right-0 top-12 z-30 bg-white border border-gray-600 rounded-xl shadow-lg p-4 w-72 dark:bg-neutral-800 dark:border-gray-700">
               <p className="text-sm font-medium mb-3 dark:text-gray-300">
                 Select Date Range
               </p>
 
               <div className="space-y-3">
-
                 <div>
                   <label className="text-xs text-gray-500 dark:text-gray-300">
                     From
                   </label>
-
                   <input
                     type="date"
                     value={tempFrom}
                     onChange={(e) => setTempFrom(e.target.value)}
-                    className="w-[250px] md:w-full border border-gray-600 rounded px-3 py-2 text-sm dark:bg-neutral-700 dark:border-gray-600 dark:text-gray-300"
+                    className="w-full border border-gray-600 rounded px-3 py-2 text-sm dark:bg-neutral-700 dark:border-gray-600 dark:text-gray-300"
                   />
                 </div>
 
@@ -245,27 +178,23 @@ useEffect(() => {
                   <label className="text-xs text-gray-500 dark:text-gray-300">
                     To
                   </label>
-
                   <input
                     type="date"
                     value={tempTo}
                     onChange={(e) => setTempTo(e.target.value)}
-                    className="w-[250px] md:w-full border border-gray-600 rounded px-3 py-2 text-sm dark:bg-neutral-700 dark:border-gray-600 dark:text-gray-300"
+                    className="w-full border border-gray-600 rounded px-3 py-2 text-sm dark:bg-neutral-700 dark:border-gray-600 dark:text-gray-300"
                   />
                 </div>
-
               </div>
 
-
               <div className="flex justify-end gap-2 mt-4">
-
                 <button
                   onClick={() => {
                     setShowDate(false);
                     setTempFrom("");
                     setTempTo("");
                   }}
-                  className="text-sm px-3 py-1.5 border border-gray-600 rounded dark:text-gray-300 dark:border-gray-600"
+                  className="text-sm px-3 py-1.5 border border-gray-600 rounded dark:text-gray-300"
                 >
                   Cancel
                 </button>
@@ -278,24 +207,17 @@ useEffect(() => {
                     setShowDate(false);
                   }}
                   disabled={!tempFrom || !tempTo}
-                  className="
-                   text-white
-                    px-3 py-1.5 rounded text-sm
-                    disabled:opacity-50
-                  "
+                  className="text-white px-3 py-1.5 rounded text-sm disabled:opacity-50"
                   style={{ backgroundColor: "var(--brand-color)" }}
                 >
                   Apply
                 </button>
-
               </div>
-
             </div>
           )}
 
 
           {/* Filters Button */}
-
           <button
             onClick={() => setShowFilters(!showFilters)}
             className="px-3 py-1.5 border border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-neutral-700 dark:text-gray-300"
@@ -303,18 +225,9 @@ useEffect(() => {
             Filters
           </button>
 
-
           {/* Filters Panel */}
-
           {showFilters && (
-            <div
-              className="
-                absolute right-0 top-12 z-20
-                bg-white border border-gray-600 rounded-xl shadow-lg
-                p-4 w-64 dark:bg-neutral-800 dark:border-gray-700
-              "
-            >
-
+            <div className="absolute right-0 top-12 z-20 bg-white border border-gray-600 rounded-xl shadow-lg p-4 w-64 dark:bg-neutral-800 dark:border-gray-700">
               <p className="text-sm font-medium mb-2 dark:text-gray-300">
                 User Type
               </p>
@@ -329,40 +242,27 @@ useEffect(() => {
                 <option value="unverified">Unverified</option>
               </select>
 
-
               <button
                 onClick={() => setShowFilters(false)}
-                className="
-                  w-full text-white
-                  py-1.5 rounded-lg text-sm
-                "
+                className="w-full text-white py-1.5 rounded-lg text-sm"
                 style={{ backgroundColor: "var(--brand-color)" }}
               >
                 Apply
               </button>
-
             </div>
           )}
-
         </div>
-
       </div>
 
 
       {/* ================= CHART ================= */}
 
       <div className="bg-white rounded-xl shadow-sm p-6 mb-8 dark:bg-neutral-800">
-
         <div className="h-[260px]">
-
           <ResponsiveContainer width="100%" height="100%">
-
             <LineChart data={chartData}>
-
               <XAxis dataKey="name" />
-
               <Tooltip />
-
               <Line
                 type="monotone"
                 dataKey="users"
@@ -370,13 +270,9 @@ useEffect(() => {
                 strokeWidth={3}
                 dot={false}
               />
-
             </LineChart>
-
           </ResponsiveContainer>
-
         </div>
-
       </div>
 
 
@@ -405,30 +301,22 @@ useEffect(() => {
           color="red"
         />
 
-        {/* <InfoCard
-          icon={<Clock size={20} />}
-          title="Session"
-          value={sessionType}
-          sub={expiresIn}
-        /> */}
-
       </div>
-
     </>
   );
 }
 
 
-/* ================= COMPONENTS ================= */
-
+/* ================= INFO CARD COMPONENT ================= */
 
 function InfoCard({ title, value, color, sub, icon }: any) {
   return (
     <div className="bg-white rounded-xl shadow-sm p-6 flex flex-col dark:bg-neutral-800">
-
       <div className="flex items-center gap-2 mb-2">
         <span style={{ color: "var(--brand-color)" }}>{icon}</span>
-        <h4 className="text-gray-500 text-sm dark:text-gray-300">{title}</h4>
+        <h4 className="text-gray-500 text-sm dark:text-gray-300">
+          {title}
+        </h4>
       </div>
 
       <p
@@ -443,11 +331,10 @@ function InfoCard({ title, value, color, sub, icon }: any) {
       </p>
 
       {sub && (
-        <p className="text-sm text-gray-300 mt-1 hidden dark:text-gray-300">{sub}</p>
+        <p className="text-sm text-gray-300 mt-1 hidden dark:text-gray-300">
+          {sub}
+        </p>
       )}
-
     </div>
   );
 }
-
-
