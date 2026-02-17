@@ -1,3 +1,32 @@
+import {
+  Routes,
+  Route,
+  Navigate,
+} from "react-router-dom";
+
+import {
+  lazy,
+  Suspense,
+  useEffect,
+} from "react";
+
+import axios from "axios";
+import { setToken } from "./api/axios";
+
+import GlobalLoader from "./components/GlobalLoader";
+import { useAuth } from "./context/AuthContext";
+
+import Layout from "./components/Layout";
+import PrivateRoute from "./components/PrivateRoute";
+import AdminRoute from "./components/AdminRoutes";
+
+/* Lazy Pages */
+const Auth = lazy(() => import("./pages/Auth"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Profile = lazy(() => import("./pages/Profile"));
+const Users = lazy(() => import("./pages/Users"));
+const Settings = lazy(() => import("./pages/Settings"));
+
 export default function App() {
   const { loading } = useAuth();
 
@@ -11,7 +40,9 @@ export default function App() {
           { withCredentials: true }
         );
 
-        setToken(res.data.accessToken);
+        if (res.data?.accessToken) {
+          setToken(res.data.accessToken);
+        }
       } catch (err) {
         console.log("No refresh token available");
       }
@@ -46,9 +77,20 @@ export default function App() {
               </PrivateRoute>
             }
           >
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/dashboard/profile" element={<Profile />} />
 
+            {/* Dashboard */}
+            <Route
+              path="/dashboard"
+              element={<Dashboard />}
+            />
+
+            {/* Profile */}
+            <Route
+              path="/dashboard/profile"
+              element={<Profile />}
+            />
+
+            {/* Admin → Users */}
             <Route
               path="/dashboard/users"
               element={
@@ -58,16 +100,20 @@ export default function App() {
               }
             />
 
+            {/* Settings */}
             <Route
               path="/dashboard/settings"
               element={<Settings />}
             />
+
           </Route>
 
           {/* ================= FALLBACK ================= */}
           <Route
             path="*"
-            element={<Navigate to="/dashboard" replace />}
+            element={
+              <Navigate to="/dashboard" replace />
+            }
           />
 
         </Routes>
