@@ -1,8 +1,7 @@
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL,
-
+  baseURL: import.meta.env.VITE_API_URL, // already ends with /api
   withCredentials: true,
 });
 
@@ -27,17 +26,18 @@ api.interceptors.response.use(
     if (err.response?.status === 401 && !original._retry) {
       original._retry = true;
 
-      const res = await axios.post(
-        `${import.meta.env.VITE_API_URL}/refresh`,
-        {},
-        { withCredentials: true }
-      );
+      try {
+        // ✅ IMPORTANT: use api instance
+        const res = await api.post("/refresh");
 
-      setToken(res.data.accessToken);
+        setToken(res.data.accessToken);
 
-      original.headers.Authorization = `Bearer ${res.data.accessToken}`;
+        original.headers.Authorization = `Bearer ${res.data.accessToken}`;
 
-      return api(original);
+        return api(original);
+      } catch (refreshError) {
+        return Promise.reject(refreshError);
+      }
     }
 
     return Promise.reject(err);
@@ -45,4 +45,3 @@ api.interceptors.response.use(
 );
 
 export default api;
-
