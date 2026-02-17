@@ -2,6 +2,7 @@ import axios from "axios";
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL,
+
   withCredentials: true,
 });
 
@@ -13,7 +14,7 @@ export const setToken = (token: string) => {
 
 api.interceptors.request.use((config) => {
   if (accessToken) {
-    config.headers.Authorization = accessToken;
+    config.headers.Authorization = `Bearer ${accessToken}`;
   }
   return config;
 });
@@ -27,14 +28,14 @@ api.interceptors.response.use(
       original._retry = true;
 
       const res = await axios.post(
-        `${api.defaults.baseURL}/refresh`,
+        `${import.meta.env.VITE_API_URL}/refresh`,
         {},
         { withCredentials: true }
       );
 
       setToken(res.data.accessToken);
 
-      original.headers.Authorization = res.data.accessToken;
+      original.headers.Authorization = `Bearer ${res.data.accessToken}`;
 
       return api(original);
     }
