@@ -37,7 +37,16 @@ export default function Dashboard() {
   const [range, setRange] = useState("12m");
 
   const [stats, setStats] = useState<Stats | null>(null);
+  const [showFilters, setShowFilters] = useState(false);
+  const [showDate, setShowDate] = useState(false);
 
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+
+  const [tempFrom, setTempFrom] = useState("");
+  const [tempTo, setTempTo] = useState("");
+
+  const [userType, setUserType] = useState("all");
 
   const [loadingChart, setLoadingChart] = useState(true);
 
@@ -102,32 +111,198 @@ export default function Dashboard() {
         </p>
       </div>
 
-      {/* ================= RANGE BUTTONS ================= */}
+      <div className="flex flex-wrap gap-3 mb-6 items-center">
 
-      <div className="flex gap-3 mb-6">
+
+        {/* Range Buttons */}
+
         {[
           { label: "12 months", value: "12m" },
           { label: "30 days", value: "30d" },
           { label: "7 days", value: "7d" },
           { label: "24 hours", value: "24h" },
         ].map((t) => (
+
           <button
             key={t.value}
-            onClick={() => setRange(t.value)}
+            onClick={() => {
+              setRange(t.value);
+              setFromDate("");
+              setToDate("");
+            }}
             style={
               range === t.value
-                ? {
-                    backgroundColor: "var(--brand-color)",
-                    color: "white",
-                  }
+                ? { backgroundColor: "var(--brand-color)", color: "white", borderColor: "var(--brand-color)" }
                 : {}
             }
-            className="px-3 py-1.5 border border-gray-600 rounded-lg text-sm transition"
+            className={`
+    px-3 py-1.5 border border-gray-600 rounded-lg text-sm
+    transition
+    hover:bg-gray-50 dark:hover:bg-neutral-700
+    dark:text-gray-300
+  `}
           >
             {t.label}
           </button>
+
+
         ))}
+
+
+        {/* ================= RIGHT SIDE ================= */}
+
+        <div className="ml-auto flex gap-2 relative">
+
+
+          {/* Date Button */}
+
+          <button
+            onClick={() => setShowDate(!showDate)}
+            className="px-3 py-1.5 border border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-neutral-700 dark:text-gray-300"
+          >
+            {fromDate && toDate
+              ? `${fromDate} → ${toDate}`
+              : "Select dates"}
+          </button>
+
+
+          {/* Date Panel */}
+
+          {showDate && (
+            <div
+              className="
+                absolute right-0 top-12 z-30
+                bg-white border border-gray-600 rounded-xl shadow-lg
+                p-4 w-72 dark:bg-neutral-800 dark:border-gray-700
+              "
+            >
+
+              <p className="text-sm font-medium mb-3 dark:text-gray-300">
+                Select Date Range
+              </p>
+
+              <div className="space-y-3">
+
+                <div>
+                  <label className="text-xs text-gray-500 dark:text-gray-300">
+                    From
+                  </label>
+
+                  <input
+                    type="date"
+                    value={tempFrom}
+                    onChange={(e) => setTempFrom(e.target.value)}
+                    className="w-[250px] md:w-full border border-gray-600 rounded px-3 py-2 text-sm dark:bg-neutral-700 dark:border-gray-600 dark:text-gray-300"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-gray-500 dark:text-gray-300">
+                    To
+                  </label>
+
+                  <input
+                    type="date"
+                    value={tempTo}
+                    onChange={(e) => setTempTo(e.target.value)}
+                    className="w-[250px] md:w-full border border-gray-600 rounded px-3 py-2 text-sm dark:bg-neutral-700 dark:border-gray-600 dark:text-gray-300"
+                  />
+                </div>
+
+              </div>
+
+
+              <div className="flex justify-end gap-2 mt-4">
+
+                <button
+                  onClick={() => {
+                    setShowDate(false);
+                    setTempFrom("");
+                    setTempTo("");
+                  }}
+                  className="text-sm px-3 py-1.5 border border-gray-600 rounded dark:text-gray-300 dark:border-gray-600"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  onClick={() => {
+                    setFromDate(tempFrom);
+                    setToDate(tempTo);
+                    setRange("");
+                    setShowDate(false);
+                  }}
+                  disabled={!tempFrom || !tempTo}
+                  className="
+                   text-white
+                    px-3 py-1.5 rounded text-sm
+                    disabled:opacity-50
+                  "
+                  style={{ backgroundColor: "var(--brand-color)" }}
+                >
+                  Apply
+                </button>
+
+              </div>
+
+            </div>
+          )}
+
+
+          {/* Filters Button */}
+
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className="px-3 py-1.5 border border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-neutral-700 dark:text-gray-300"
+          >
+            Filters
+          </button>
+
+
+          {/* Filters Panel */}
+
+          {showFilters && (
+            <div
+              className="
+                absolute right-0 top-12 z-20
+                bg-white border border-gray-600 rounded-xl shadow-lg
+                p-4 w-64 dark:bg-neutral-800 dark:border-gray-700
+              "
+            >
+
+              <p className="text-sm font-medium mb-2 dark:text-gray-300">
+                User Type
+              </p>
+
+              <select
+                value={userType}
+                onChange={(e) => setUserType(e.target.value)}
+                className="w-full border border-gray-600 rounded px-3 py-2 text-sm mb-4 dark:bg-neutral-700 dark:border-gray-700 dark:text-gray-300"
+              >
+                <option value="all">All Users</option>
+                <option value="verified">Verified</option>
+                <option value="unverified">Unverified</option>
+              </select>
+
+
+              <button
+                onClick={() => setShowFilters(false)}
+                className="
+                  w-full text-white
+                  py-1.5 rounded-lg text-sm
+                "
+                style={{ backgroundColor: "var(--brand-color)" }}
+              >
+                Apply
+              </button>
+
+            </div>
+          )}
+
+        </div>
+
       </div>
+
 
       {/* ================= LINE CHART ================= */}
 
@@ -242,11 +417,10 @@ function InfoCard({ title, value, color, icon, growth }: any) {
 
         {growth && (
           <span
-            className={`text-sm font-medium ${
-              Number(growth) >= 0
-                ? "text-green-500"
-                : "text-red-500"
-            }`}
+            className={`text-sm font-medium ${Number(growth) >= 0
+              ? "text-green-500"
+              : "text-red-500"
+              }`}
           >
             {Number(growth) >= 0 ? "+" : ""}
             {growth}%
@@ -256,4 +430,3 @@ function InfoCard({ title, value, color, icon, growth }: any) {
     </div>
   );
 }
-
