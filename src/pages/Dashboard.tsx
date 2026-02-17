@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import axios from "axios";
+import api from "../api/axios";
 import { useAuth } from "../context/AuthContext";
 import DashboardSkeleton from "../skeletons/DashboardSkeleton";
 import {
@@ -58,11 +58,12 @@ export default function Dashboard() {
   /* ================= LOAD STATS ================= */
 
   useEffect(() => {
-    axios
-      .get("https://leecoste-lms-backend.onrender.com/api/stats")
-      .then((res) => setStats(res.data))
-      .finally(() => setLoading(false));
-  }, []);
+  api
+    .get("/stats")
+    .then((res) => setStats(res.data))
+    .finally(() => setLoading(false));
+}, []);
+
 
 
   /* ================= SESSION ================= */
@@ -101,20 +102,19 @@ export default function Dashboard() {
   /* ================= LOAD CHART ================= */
 
   useEffect(() => {
+  api
+    .get("/user-stats", {
+      params: {
+        range,
+        from: fromDate,
+        to: toDate,
+        type: userType,
+      },
+    })
+    .then((res) => setChartData(res.data))
+    .catch(() => console.log("Chart load failed"));
+}, [range, fromDate, toDate, userType]);
 
-    axios
-      .get("https://leecoste-lms-backend.onrender.com/api/user-stats", {
-        params: {
-          range,
-          from: fromDate,
-          to: toDate,
-          type: userType,
-        },
-      })
-      .then((res) => setChartData(res.data))
-      .catch(() => console.log("Chart load failed"));
-
-  }, [range, fromDate, toDate, userType]);
 
 
   /* ================= LOADING ================= */
@@ -442,3 +442,4 @@ function InfoCard({ title, value, color, sub, icon }: any) {
     </div>
   );
 }
+
