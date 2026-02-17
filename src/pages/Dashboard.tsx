@@ -38,7 +38,7 @@ export default function Dashboard() {
 
   const [stats, setStats] = useState<Stats | null>(null);
 
-  const [loadingCards, setLoadingCards] = useState(true);
+
   const [loadingChart, setLoadingChart] = useState(true);
 
   const { role } = useAuth();
@@ -60,7 +60,6 @@ export default function Dashboard() {
       } catch (err) {
         console.error("Dashboard load failed", err);
       } finally {
-        setLoadingCards(false);
         setLoadingChart(false);
       }
     };
@@ -257,3 +256,4 @@ function InfoCard({ title, value, color, icon, growth }: any) {
     </div>
   );
 }
+
