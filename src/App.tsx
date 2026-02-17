@@ -10,7 +10,6 @@ import {
   useEffect,
 } from "react";
 
-import axios from "axios";
 import api, { setToken } from "./api/axios";
 
 import GlobalLoader from "./components/GlobalLoader";
