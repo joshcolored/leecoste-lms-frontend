@@ -11,7 +11,7 @@ import {
 } from "react";
 
 import axios from "axios";
-import { setToken } from "./api/axios";
+import api, { setToken } from "./api/axios";
 
 import GlobalLoader from "./components/GlobalLoader";
 import { useAuth } from "./context/AuthContext";
@@ -32,24 +32,17 @@ export default function App() {
 
   /* ================= AUTO REFRESH TOKEN ================= */
   useEffect(() => {
-    const refreshAccessToken = async () => {
-      try {
-        const res = await axios.post(
-          `${import.meta.env.VITE_API_URL}/refresh`,
-          {},
-          { withCredentials: true }
-        );
+  const refreshAccessToken = async () => {
+    try {
+      const res = await api.post("/refresh");
+      setToken(res.data.accessToken);
+    } catch {
+      console.log("No refresh token");
+    }
+  };
 
-        if (res.data?.accessToken) {
-          setToken(res.data.accessToken);
-        }
-      } catch (err) {
-        console.log("No refresh token available");
-      }
-    };
-
-    refreshAccessToken();
-  }, []);
+  refreshAccessToken();
+}, []);
 
   return (
     <>
