@@ -234,6 +234,7 @@ export default function Layout() {
             onClick={() => goTo("/dashboard")}
           />
 
+       
           {role === "admin" && (
             <>
               <MenuItem
@@ -251,11 +252,19 @@ export default function Layout() {
                 active={location.pathname === "/dashboard/analytics"}
                 onClick={() => goTo("/dashboard/analytics")}
               />
+              <MenuItem
+                icon={<Mail size={20} />}
+                label="Messages"
+                open={open || mobileOpen}
+                active={location.pathname === "/dashboard/messages"}
+                onClick={() => goTo("/dashboard/messages")}
+              />
             </>
           )}
 
           {/* BROKER */}
           {role === "broker" && (
+            <>
             <MenuItem
               icon={<FileText size={20} />}
               label="My Listings"
@@ -267,10 +276,19 @@ export default function Layout() {
                 goTo("/dashboard/listings")
               }
             />
+             <MenuItem
+                icon={<Mail size={20} />}
+                label="Messages"
+                open={open || mobileOpen}
+                active={location.pathname === "/dashboard/messages"}
+                onClick={() => goTo("/dashboard/messages")}
+              />
+              </>
           )}
 
           {/* CLIENT */}
           {role === "client" && (
+            <>
             <MenuItem
               icon={<Bell size={20} />}
               label="My Bookings"
@@ -282,7 +300,16 @@ export default function Layout() {
                 goTo("/dashboard/bookings")
               }
             />
+             <MenuItem
+                icon={<Mail size={20} />}
+                label="Messages"
+                open={open || mobileOpen}
+                active={location.pathname === "/dashboard/messages"}
+                onClick={() => goTo("/dashboard/messages")}
+              />
+              </>
           )}
+
 
 
           <MenuItem
@@ -448,3 +475,4 @@ function MenuItem({
     </button>
   );
 }
+
