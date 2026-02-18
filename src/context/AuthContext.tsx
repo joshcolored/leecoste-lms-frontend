@@ -118,60 +118,6 @@ export function AuthProvider({
 
           setUser(firebaseUser);
 
-          /* ================= SESSION WATCH ================= */
-
-          const local =
-            localStorage.getItem("auth_session");
-
-          if (local) {
-
-            const { uid, sessionId } =
-              JSON.parse(local);
-
-            const sessionRef = doc(
-              db,
-              "users",
-              uid,
-              "sessions",
-              sessionId
-            );
-
-            sessionUnsub.current = onSnapshot(
-              sessionRef,
-              (docSnap) => {
-
-                /* 🔴 SESSION DELETED */
-                if (!docSnap.exists()) {
-
-                  console.log("Session deleted remotely");
-
-                  localStorage.removeItem("auth_session");
-
-                  signOut(auth);
-
-                  setUser(null);
-                  setRole(null);
-
-                  return;
-                }
-
-                const data = docSnap.data();
-
-                /* 🔴 SESSION DISABLED */
-                if (data.active === false) {
-
-                  console.log("Session terminated remotely");
-
-                  localStorage.removeItem("auth_session");
-
-                  signOut(auth);
-
-                  setUser(null);
-                  setRole(null);
-                }
-              }
-            );
-          }
 
         } catch (err) {
 
@@ -195,6 +141,42 @@ export function AuthProvider({
       }
     };
   }, []);
+
+  const startSessionListener = (uid: string, sessionId: string) => {
+    const sessionRef = doc(db, "users", uid, "sessions", sessionId);
+
+    if (sessionUnsub.current) {
+      sessionUnsub.current();
+      sessionUnsub.current = null;
+    }
+
+    sessionUnsub.current = onSnapshot(sessionRef, (docSnap) => {
+      if (!docSnap.exists()) {
+        console.log("Session deleted remotely");
+
+        localStorage.removeItem("auth_session");
+
+        signOut(auth);
+
+        setUser(null);
+        setRole(null);
+        return;
+      }
+
+      const data = docSnap.data();
+
+      if (data?.active === false) {
+        console.log("Session terminated remotely");
+
+        localStorage.removeItem("auth_session");
+
+        signOut(auth);
+
+        setUser(null);
+        setRole(null);
+      }
+    });
+  };
 
   /* ================= LOGIN ================= */
 
@@ -275,6 +257,9 @@ export function AuthProvider({
         loginAt: Date.now(),
       })
     );
+
+    startSessionListener(cred.user.uid, sessionId);
+
   };
 
 
@@ -308,46 +293,41 @@ export function AuthProvider({
     await signOut(auth);
   };
 
-  /* ================= LOGOUT ================= */
 
   /* ================= LOGOUT ================= */
 
   const logout = async () => {
-
-    const session = localStorage.getItem("auth_session");
-
-    if (session) {
-      const data = JSON.parse(session);
-
-      try {
-        // ✅ DELETE SESSION DOCUMENT
-        await deleteDoc(
-          doc(
-            db,
-            "users",
-            data.uid,
-            "sessions",
-            data.sessionId
-          )
-        );
-
-        console.log("Session deleted:", data.sessionId);
-
-      } catch (err) {
-        console.warn("Failed to delete session:", err);
+    try {
+      if (sessionUnsub.current) {
+        sessionUnsub.current();
+        sessionUnsub.current = null;
       }
+      const sessionRaw = localStorage.getItem("auth_session");
+      const session = sessionRaw ? JSON.parse(sessionRaw) : null;
+
+      // 🔥 1️⃣ Delete session FIRST (while authenticated)
+      if (session?.uid && session?.sessionId) {
+        await deleteDoc(
+          doc(db, "users", session.uid, "sessions", session.sessionId)
+        );
+        console.log("Session deleted:", session.sessionId);
+      }
+
+      // 🔥 2️⃣ Then sign out
+      await signOut(auth);
+
+      // 🔥 3️⃣ Then clear localStorage
+      localStorage.removeItem("auth_session");
+
+      setUser(null);
+      setRole(null);
+
+    } catch (error) {
+      console.error("Logout failed:", error);
     }
-
-    // Clear local session
-    localStorage.removeItem("auth_session");
-
-    // Firebase logout
-    await signOut(auth);
-
-    // Reset state
-    setUser(null);
-    setRole(null);
   };
+
+
 
 
   /* ================= PROVIDER ================= */
