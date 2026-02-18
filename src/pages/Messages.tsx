@@ -694,7 +694,7 @@ export default function Messages() {
             </div>
 
             {/* MOBILE */}
-        <div className="md:hidden h-full relative overflow-hidden border-neutral-700 ">
+        <div className="md:hidden h-[85dvh] relative overflow-hidden border-neutral-700 ">
                 <motion.div
                     className="flex h-full w-full"
                     animate={{ x: activeConversation ? "-100%" : "0%" }}
