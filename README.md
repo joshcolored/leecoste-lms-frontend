@@ -105,14 +105,19 @@ No custom JWT implementation — fully handled by Firebase for security and scal
 
 ## 1️⃣ Clone Repository
 
-git clone https://github.com/yourusername/leecoste.git  
-cd leecoste
+FRONTEND:
+git clone https://github.com/joshcolored/leecoste-lms-frontend.git  
+
+BACKEND(See on other repo):
+git clone https://github.com/joshcolored/leecoste-lms-backend.git  
+
 
 ---
 
 ## 2️⃣ Backend Setup
 
-cd backend  
+  
+cd leecoste-lms-backend
 npm install  
 
 Create `.env`:
@@ -133,7 +138,7 @@ http://localhost:5000
 
 ## 3️⃣ Frontend Setup
 
-cd frontend  
+cd leecoste-lms-frontend  
 npm install  
 npm run dev  
 
@@ -197,7 +202,7 @@ PORT=10000
 # 👨‍💻 Author
 
 Joshua Grijaldo  
-Full-Stack Developer
+Aspiring Full-Stack Developer
 
 ---
 
