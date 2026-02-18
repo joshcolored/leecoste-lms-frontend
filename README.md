@@ -1,4 +1,4 @@
-# 🚀 LeeCoste – Listing Management System
+# 🚀 LeeCoste – Listing Management System (Ongoing Development)
 
 ![React](https://img.shields.io/badge/Frontend-React-blue?logo=react)
 ![TypeScript](https://img.shields.io/badge/Language-TypeScript-3178C6?logo=typescript)
