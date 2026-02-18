@@ -694,14 +694,14 @@ export default function Messages() {
             </div>
 
             {/* MOBILE */}
-            <div className="md:hidden h-full relative overflow-hidden border-neutral-700 ">
+           <div className="md:hidden fixed inset-0 overflow-hidden border-neutral-700">
                 <motion.div
-                    className="flex h-full w-[100%]"
+                    className="flex h-dvh w-full"
                     animate={{ x: activeConversation ? "-100%" : "0%" }}
                     transition={{
                         type: "tween",
-                        duration: 0.5,
-                        ease: "easeInOut"
+                        duration: 0.28,
+                        ease: [0.4, 0, 0.2, 1]
                     }}
                 >
                     {/* Sidebar */}
