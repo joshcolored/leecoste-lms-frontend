@@ -16,16 +16,20 @@ import {
   Settings,
   LogOut,
   Menu,
-  X, 
+  X,
   Mail
 } from "lucide-react";
 import {
   doc,
   getDoc,
 } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
 import { db } from "../firebase";
 import useTheme from "../hooks/useTheme";
 import { setAppTitle } from "../utils/appTitle";
+import { getDatabase, ref, set, onDisconnect } from "firebase/database";
+
+
 
 export default function Layout() {
   const { user, role, logout } = useAuth();
@@ -34,6 +38,10 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { theme, toggleTheme } = useTheme();
+  const auth = getAuth();
+  const firebaseUser = auth.currentUser;
+
+  const rtdb = getDatabase();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [open, setOpen] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -50,7 +58,10 @@ export default function Layout() {
     "/dashboard/users": "Users",
     "/dashboard/settings": "Settings",
     "/dashboard/profile": "Profile",
+    "/dashboard/messages": "Messages",
   };
+
+
 
   const currentPage =
     routeMap[location.pathname] || "Overview";
@@ -101,6 +112,23 @@ export default function Layout() {
 
     loadCompany();
   }, []);
+
+  useEffect(() => {
+    if (!firebaseUser) return;
+
+    const userStatusRef = ref(rtdb, `status/${firebaseUser.uid}`);
+
+    set(userStatusRef, {
+      online: true,
+      lastChanged: Date.now(),
+    });
+
+    onDisconnect(userStatusRef).set({
+      online: false,
+      lastChanged: Date.now(),
+    });
+
+  }, [firebaseUser]);
 
 
 
@@ -235,7 +263,6 @@ export default function Layout() {
             onClick={() => goTo("/dashboard")}
           />
 
-       
           {role === "admin" && (
             <>
               <MenuItem
@@ -266,51 +293,50 @@ export default function Layout() {
           {/* BROKER */}
           {role === "broker" && (
             <>
-            <MenuItem
-              icon={<FileText size={20} />}
-              label="My Listings"
-              open={open || mobileOpen}
-              active={
-                location.pathname === "/dashboard/listings"
-              }
-              onClick={() =>
-                goTo("/dashboard/listings")
-              }
-            />
-             <MenuItem
+              <MenuItem
+                icon={<FileText size={20} />}
+                label="My Listings"
+                open={open || mobileOpen}
+                active={
+                  location.pathname === "/dashboard/listings"
+                }
+                onClick={() =>
+                  goTo("/dashboard/listings")
+                }
+              />
+              <MenuItem
                 icon={<Mail size={20} />}
                 label="Messages"
                 open={open || mobileOpen}
                 active={location.pathname === "/dashboard/messages"}
                 onClick={() => goTo("/dashboard/messages")}
               />
-              </>
+            </>
           )}
 
           {/* CLIENT */}
           {role === "client" && (
             <>
-            <MenuItem
-              icon={<Bell size={20} />}
-              label="My Bookings"
-              open={open || mobileOpen}
-              active={
-                location.pathname === "/dashboard/bookings"
-              }
-              onClick={() =>
-                goTo("/dashboard/bookings")
-              }
-            />
-             <MenuItem
+              <MenuItem
+                icon={<Bell size={20} />}
+                label="My Bookings"
+                open={open || mobileOpen}
+                active={
+                  location.pathname === "/dashboard/bookings"
+                }
+                onClick={() =>
+                  goTo("/dashboard/bookings")
+                }
+              />
+              <MenuItem
                 icon={<Mail size={20} />}
                 label="Messages"
                 open={open || mobileOpen}
                 active={location.pathname === "/dashboard/messages"}
                 onClick={() => goTo("/dashboard/messages")}
               />
-              </>
+            </>
           )}
-
 
 
           <MenuItem
@@ -423,7 +449,7 @@ export default function Layout() {
         </header>
 
 
-        <main className="flex-1 p-4 lg:p-6 overflow-hidden dark:bg-neutral-900">
+        <main className="flex-1 p-3 lg:p-6 overflow-hidden dark:bg-neutral-900">
           <AnimatePresence mode="wait">
             <motion.div
               key={location.pathname}
@@ -476,5 +502,3 @@ function MenuItem({
     </button>
   );
 }
-
-
