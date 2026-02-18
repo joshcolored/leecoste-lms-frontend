@@ -698,7 +698,11 @@ export default function Messages() {
                 <motion.div
                     className="flex h-full w-[100%]"
                     animate={{ x: activeConversation ? "-100%" : "0%" }}
-                    transition={{ type: "spring", stiffness: 650, damping: 50 }}
+                    transition={{
+                        type: "tween",
+                        duration: 0.5,
+                        ease: "easeInOut"
+                    }}
                 >
                     {/* Sidebar */}
                     <div className="w-full flex-shrink-0 border-r dark:border-neutral-800 border-neutral-300 flex flex-col">
