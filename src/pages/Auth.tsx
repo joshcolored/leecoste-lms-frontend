@@ -483,11 +483,11 @@ export default function Auth() {
         outline-none
       "
                             >
-                                <option value="Client">
+                                <option value="client">
                                     Client
                                 </option>
 
-                                <option value="Broker">
+                                <option value="broker">
                                     Broker
                                 </option>
                             </select>
@@ -580,3 +580,4 @@ export default function Auth() {
     );
 
 }
+
