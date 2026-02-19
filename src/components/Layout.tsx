@@ -22,6 +22,10 @@ import {
 import {
   doc,
   getDoc,
+  collection,
+  query,
+  where,
+  onSnapshot
 } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import { db } from "../firebase";
@@ -50,6 +54,7 @@ export default function Layout() {
   const [companyName, setCompanyName] = useState("");
   const [companyLogo, setCompanyLogo] = useState<string | null>(null);
   const [companyImage] = useState<string | null>(null);
+  const [totalUnread, setTotalUnread] = useState(0);
   const routeMap: Record<string, string> = {
     "/dashboard": "Overview",
     "/dashboard/analytics": "Analytics",
@@ -81,6 +86,30 @@ export default function Layout() {
       setIsLoggingOut(false);
     }
   };
+
+  useEffect(() => {
+    if (!firebaseUser) return;
+
+    const q = query(
+      collection(db, "conversations"),
+      where("participants", "array-contains", firebaseUser.uid)
+    );
+
+    const unsub = onSnapshot(q, (snap) => {
+      let total = 0;
+
+      snap.docs.forEach((doc) => {
+        const data = doc.data();
+        const unread = data.unread?.[firebaseUser.uid] || 0;
+        total += unread;
+      });
+
+      setTotalUnread(total);
+    });
+
+    return () => unsub();
+  }, [firebaseUser]);
+
 
   useEffect(() => {
     const loadCompany = async () => {
@@ -285,8 +314,10 @@ export default function Layout() {
                 label="Messages"
                 open={open || mobileOpen}
                 active={location.pathname === "/dashboard/messages"}
+                badge={totalUnread}
                 onClick={() => goTo("/dashboard/messages")}
               />
+
             </>
           )}
 
@@ -309,8 +340,10 @@ export default function Layout() {
                 label="Messages"
                 open={open || mobileOpen}
                 active={location.pathname === "/dashboard/messages"}
+                badge={totalUnread}
                 onClick={() => goTo("/dashboard/messages")}
               />
+
             </>
           )}
 
@@ -333,8 +366,10 @@ export default function Layout() {
                 label="Messages"
                 open={open || mobileOpen}
                 active={location.pathname === "/dashboard/messages"}
+                badge={totalUnread}
                 onClick={() => goTo("/dashboard/messages")}
               />
+
             </>
           )}
 
@@ -474,31 +509,55 @@ function MenuItem({
   label,
   open,
   active,
+  badge,
   onClick,
 }: {
   icon: React.ReactNode;
   label: string;
   open: boolean;
   active?: boolean;
+  badge?: number;
   onClick?: () => void;
 }) {
   return (
     <button
       onClick={onClick}
       className={`
-        w-full flex items-center
-        ${open ? "gap-3 px-4" : "justify-center"}
-        py-2.5 rounded-lg text-gray-600 dark:text-gray-300
-        text-sm font-medium transition-all duration-200
-        hover:translate-x-1
-      `}
+    w-full flex items-center relative
+    ${open ? "gap-3 px-4" : "justify-center"}
+    py-2.5 rounded-lg text-gray-600 dark:text-gray-300
+    text-sm font-medium transition-all duration-200
+    hover:translate-x-1
+  `}
       style={{
         color: active ? "var(--brand-color)" : undefined,
         backgroundColor: active ? "rgba(0,0,0,0.03)" : undefined,
       }}
     >
-      {icon}
-      {open && <span>{label}</span>}
+      <div className="relative">
+        {icon}
+
+        {/* Collapsed sidebar */}
+        {!open && badge !== undefined && badge > 0 && (
+          <span className="absolute -top-1 -right-2 bg-red-600 text-white text-[10px] px-1 rounded-full min-w-[16px] text-center">
+            {badge > 99 ? "99+" : badge}
+          </span>
+        )}
+      </div>
+
+      {open && (
+        <>
+          <span>{label}</span>
+
+          {/* 🔥 Badge when sidebar open */}
+          {badge !== undefined && badge > 0 && (
+            <span className="ml-auto bg-red-600 text-white text-xs px-2 py-0.5 rounded-full min-w-[22px] text-center">
+              {badge > 99 ? "99+" : badge}
+            </span>
+          )}
+        </>
+      )}
     </button>
+
   );
 }
