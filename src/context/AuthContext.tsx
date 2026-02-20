@@ -19,8 +19,7 @@ import {
   browserLocalPersistence,
   browserSessionPersistence,
 } from "firebase/auth";
-
-import type { User } from "firebase/auth";
+import type { User, UserCredential } from "firebase/auth";
 
 import {
   doc,
@@ -38,8 +37,15 @@ import { auth, db } from "../firebase";
 
 export type UserRole = "admin" | "broker" | "client";
 
+
+interface UserProfile {
+  name: string;
+  role: UserRole;
+}
+
 interface AuthContextType {
   user: User | null;
+  profile: UserProfile | null;
   role: UserRole | null;
 
   login: (
@@ -51,13 +57,16 @@ interface AuthContextType {
   register: (
     email: string,
     password: string,
-    role: UserRole
-  ) => Promise<void>;
+    role: UserRole,
+    firstName: string,
+    lastName: string
+  ) => Promise<UserCredential>;
 
   logout: () => Promise<void>;
 
   loading: boolean;
 }
+
 
 /* ================= CONTEXT ================= */
 
@@ -75,6 +84,7 @@ export function AuthProvider({
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<UserRole | null>(null);
   const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
 
   /* Session listener */
   const sessionUnsub = useRef<(() => void) | null>(
@@ -111,10 +121,21 @@ export function AuthProvider({
           );
 
           if (snap.exists()) {
-            setRole(snap.data().role as UserRole);
+            const data = snap.data();
+
+            setProfile({
+              name: data.name,
+              role: data.role as UserRole,
+            });
+
+            setRole(data.role as UserRole);
+
           } else {
+            setProfile(null);
             setRole(null);
           }
+
+          setUser(firebaseUser);
 
           setUser(firebaseUser);
 
@@ -262,13 +283,14 @@ export function AuthProvider({
 
   };
 
-
   /* ================= REGISTER ================= */
 
   const register = async (
     email: string,
     password: string,
-    role: UserRole
+    role: UserRole,
+    firstName: string,
+    lastName: string
   ) => {
 
     const cred =
@@ -278,11 +300,15 @@ export function AuthProvider({
         password
       );
 
+    const trimmedFirst = firstName.trim();
+    const trimmedLast = lastName.trim();
+
     await setDoc(
       doc(db, "users", cred.user.uid),
       {
         email,
         role,
+        name: `${trimmedFirst} ${trimmedLast}`,
         createdAt: serverTimestamp(),
         lastLogin: serverTimestamp(),
       }
@@ -291,6 +317,8 @@ export function AuthProvider({
     await sendEmailVerification(cred.user);
 
     await signOut(auth);
+
+    return cred;
   };
 
 
@@ -336,6 +364,7 @@ export function AuthProvider({
     <AuthContext.Provider
       value={{
         user,
+        profile,
         role,
         login,
         register,
