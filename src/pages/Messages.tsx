@@ -22,6 +22,7 @@ import { db } from "../firebase";
 import { useEffect, useState, useRef } from "react";
 import { Send, ArrowLeft, Plus, Trash2, X, Smile, Reply, Trash, Upload, File as FileIcon } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import MessagesSkeleton from "../skeletons/MessagesSkeleton";
 
 /* ================= TYPES ================= */
 
@@ -84,6 +85,7 @@ export default function Messages() {
     const [loadingMessages, setLoadingMessages] = useState(false);
     const [isSending, setIsSending] = useState(false);
     const bottomRef = useRef<HTMLDivElement>(null);
+    const [initialLoading, setInitialLoading] = useState(true);
     const [isConvDeleteMode, setIsConvDeleteMode] = useState(false);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [selectedConvs, setSelectedConvs] = useState<string[]>([]);
@@ -222,6 +224,19 @@ export default function Messages() {
         return () => unsub();
     }, []);
 
+    useEffect(() => {
+        if (!firebaseUser) return;
+
+        const init = async () => {
+            const snap = await getDoc(doc(db, "users", firebaseUser.uid));
+            if (snap.exists()) {
+                setCurrentUser({ id: snap.id, ...snap.data() } as AppUser);
+            }
+            setInitialLoading(false);
+        };
+
+        init();
+    }, [firebaseUser]);
 
     /* ================= LOAD CONVERSATIONS ================= */
 
@@ -252,7 +267,7 @@ export default function Messages() {
     useEffect(() => {
         if (!activeConversation) {
             setMessages([]);
-            setLoadingMessages(false); // ✅ prevent infinite loading
+            setLoadingMessages(false);
             return;
         }
 
@@ -276,7 +291,7 @@ export default function Messages() {
             },
             (error) => {
                 console.error("Snapshot error:", error);
-                setLoadingMessages(false); // ✅ prevent stuck loading on error
+                setLoadingMessages(false);
             }
         );
 
@@ -290,7 +305,9 @@ export default function Messages() {
         bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
 
-    if (!currentUser) return null;
+    if (initialLoading || !currentUser) {
+        return <MessagesSkeleton />;
+    }
 
     /* ================= START CONVERSATION ================= */
 
@@ -1182,7 +1199,7 @@ export default function Messages() {
                                                                                 setActiveActionMsg(activeActionMsg === msg.id ? null : msg.id);
                                                                             }
                                                                         }}
-                                                                        
+
                                                                     >
                                                                         {(!msg.type || msg.type === "text") && msg.text}
 
@@ -1829,11 +1846,11 @@ export default function Messages() {
                                                                                 }`
                                                                                 }`}
                                                                             onClick={(e) => {
-                                                                            e.stopPropagation();
-                                                                            if (window.innerWidth < 768) {
-                                                                                setActiveActionMsg(activeActionMsg === msg.id ? null : msg.id);
-                                                                            }
-                                                                        }}
+                                                                                e.stopPropagation();
+                                                                                if (window.innerWidth < 768) {
+                                                                                    setActiveActionMsg(activeActionMsg === msg.id ? null : msg.id);
+                                                                                }
+                                                                            }}
                                                                         >
                                                                             {(!msg.type || msg.type === "text") && msg.text}
 
@@ -1932,13 +1949,13 @@ export default function Messages() {
                                                                                     )}
 
 
-                                                                                   
+
                                                                                 </div>
                                                                             )}
 
-                                                                             {activeReactionPicker === msg.id && (
-                                                                                        <div
-                                                                                            className={`
+                                                                        {activeReactionPicker === msg.id && (
+                                                                            <div
+                                                                                className={`
       absolute
       ${isMe ? "right-12" : "left-12"}
       -top-[50px]
@@ -1949,30 +1966,30 @@ export default function Messages() {
       shadow-xl
       z-50
     `}
-                                                                                        >
-                                                                                            {["❤️", "😂", "😮", "😢", "😡", "👍"].map((emoji) => (
-                                                                                                <button
-                                                                                                    key={emoji}
-                                                                                                    onClick={(e) => {
-                                                                                                        e.stopPropagation();
-                                                                                                        toggleReaction(msg, emoji);
-                                                                                                        setActiveReactionPicker(null);
-                                                                                                        setActiveActionMsg(null);
-                                                                                                    }}
-                                                                                                    className="text-xl hover:scale-125 transition"
-                                                                                                >
-                                                                                                    {emoji}
-                                                                                                </button>
-                                                                                            ))}
+                                                                            >
+                                                                                {["❤️", "😂", "😮", "😢", "😡", "👍"].map((emoji) => (
+                                                                                    <button
+                                                                                        key={emoji}
+                                                                                        onClick={(e) => {
+                                                                                            e.stopPropagation();
+                                                                                            toggleReaction(msg, emoji);
+                                                                                            setActiveReactionPicker(null);
+                                                                                            setActiveActionMsg(null);
+                                                                                        }}
+                                                                                        className="text-xl hover:scale-125 transition"
+                                                                                    >
+                                                                                        {emoji}
+                                                                                    </button>
+                                                                                ))}
 
-                                                                                            {/* Plus button */}
-                                                                                            <button
-                                                                                                className="dark:text-white text-lg hover:scale-110 transition"
-                                                                                            >
-                                                                                                +
-                                                                                            </button>
-                                                                                        </div>
-                                                                                    )}
+                                                                                {/* Plus button */}
+                                                                                <button
+                                                                                    className="dark:text-white text-lg hover:scale-110 transition"
+                                                                                >
+                                                                                    +
+                                                                                </button>
+                                                                            </div>
+                                                                        )}
 
                                                                     </div>
                                                                 </div>
