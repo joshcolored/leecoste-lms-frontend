@@ -12,6 +12,7 @@ import {
   Trash2,
   MoreVertical,
 } from "lucide-react";
+import UsersSkeleton from "../skeletons/UsersSkeleton";
 
 /* ================= TYPES ================= */
 
@@ -29,7 +30,7 @@ export default function Users() {
   const [selected, setSelected] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
-
+  const [loading, setLoading] = useState(true);
   const [activeMenu, setActiveMenu] =
     useState<string | null>(null);
 
@@ -43,20 +44,27 @@ export default function Users() {
   const perPage = 6;
 
   /* ================= LOAD ================= */
-
   useEffect(() => {
     loadUsers();
   }, []);
 
   const loadUsers = async () => {
-    const snap = await getDocs(collection(db, "users"));
+    setLoading(true); // start loading
 
-    setUsers(
-      snap.docs.map((d) => ({
-        id: d.id,
-        ...(d.data() as any),
-      }))
-    );
+    try {
+      const snap = await getDocs(collection(db, "users"));
+
+      setUsers(
+        snap.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as any),
+        }))
+      );
+    } catch (error) {
+      console.error("Failed to load users:", error);
+    } finally {
+      setLoading(false); // stop loading AFTER fetch
+    }
   };
 
   /* ================= RESET PAGE ON FILTER ================= */
@@ -174,6 +182,15 @@ export default function Users() {
 
     return role.charAt(0).toUpperCase() + role.slice(1).toLowerCase();
   };
+
+
+
+  if (loading) return <UsersSkeleton />;
+
+
+
+
+
 
   /* ================= UI ================= */
 
