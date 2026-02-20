@@ -16,6 +16,7 @@ import {
   setDoc,
   getDoc,
   deleteDoc,
+  updateDoc,
   serverTimestamp
 } from "firebase/firestore";
 import useTheme from "../hooks/useTheme";
@@ -46,7 +47,7 @@ interface SessionItem {
 /* ================= COMPONENT ================= */
 
 export default function Settings() {
-  const { user } = useAuth();
+  const { user, profile, role } = useAuth();
   const [ripples, setRipples] = useState<
     { id: number; x: number; y: number }[]
   >([]);
@@ -162,8 +163,6 @@ export default function Settings() {
 
   /* ================= Notifications ================= */
 
-  /* ================= NOTIFICATIONS ================= */
-
   const defaultNotifications = {
     comments: { push: true, email: true, sms: false },
     tags: { push: true, email: false, sms: false },
@@ -273,18 +272,18 @@ export default function Settings() {
     }
   }, [toast]);
 
-  const [name, setName] = useState(user?.displayName || "");
+  const [name, setName] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
 
   /* Split displayName into first + last */
   useEffect(() => {
-    if (user?.displayName) {
-      const parts = user.displayName.trim().split(" ");
+    if (profile?.name) {
+      const parts = profile.name.trim().split(" ");
       setFirstName(parts[0] || "");
       setLastName(parts.slice(1).join(" ") || "");
     }
-  }, [user]);
+  }, [profile]);
 
 
   useEffect(() => {
@@ -293,6 +292,12 @@ export default function Settings() {
       .join(" ");
     setName(combined);
   }, [firstName, lastName]);
+
+
+
+
+
+
 
   const [dragActive, setDragActive] = useState(false);
 
@@ -458,13 +463,11 @@ export default function Settings() {
     try {
       setSaving(true);
 
-
       let photoURL = user.photoURL;
 
+      // 🔥 Upload new avatar if changed
       if (photo) {
-        const blob = await fetch(photo).then((r) =>
-          r.blob()
-        );
+        const blob = await fetch(photo).then((r) => r.blob());
 
         const imgRef = ref(
           storage,
@@ -472,18 +475,33 @@ export default function Settings() {
         );
 
         await uploadBytes(imgRef, blob);
-
         photoURL = await getDownloadURL(imgRef);
       }
 
+      // 🔥 1️⃣ Update Firestore (MAIN SOURCE OF TRUTH)
+      await updateDoc(doc(db, "users", user.uid), {
+        name: name.trim(),
+        photoURL: photoURL || null,
+        updatedAt: serverTimestamp(),
+      });
+
+      // 🔥 2️⃣ (Optional) Update Firebase Auth displayName for compatibility
       await updateProfile(auth.currentUser!, {
-        displayName: name,
+        displayName: name.trim(),
         photoURL,
       });
 
       setToast({
         type: "success",
         message: "Profile updated successfully.",
+      });
+
+    } catch (error) {
+      console.error("Profile update failed:", error);
+
+      setToast({
+        type: "error",
+        message: "Failed to update profile.",
       });
 
     } finally {
@@ -994,41 +1012,76 @@ export default function Settings() {
                 <hr className="my-6 border-gray-200" />
 
                 {/* Email */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
-                    Email address <span style={{ color: brandColor }}>*</span>
-                  </label>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
+                      Email address <span style={{ color: brandColor }}>*</span>
+                    </label>
 
-                  <div className="relative">
-                    {/* Icon */}
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <svg
-                        className="w-5 h-5 text-gray-400"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M16 12H8m8 0a4 4 0 10-8 0m8 0v4a4 4 0 01-8 0v-4"
-                        />
-                      </svg>
-                    </div>
+                    <div className="relative">
+                      {/* Icon */}
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <svg
+                          className="w-5 h-5 text-gray-400"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M16 12H8m8 0a4 4 0 10-8 0m8 0v4a4 4 0 01-8 0v-4"
+                          />
+                        </svg>
+                      </div>
 
-                    <input
-                      type="email"
-                      disabled
-                      value={user.email || ""}
-                      className="w-full rounded-lg border border-gray-300 
+                      <input
+                        type="email"
+                        disabled
+                        value={user.email || ""}
+                        className="w-full rounded-lg border border-gray-300 
                    pl-10 pr-4 py-2.5 text-sm
                    bg-gray-100 text-gray-600
                    focus:outline-none dark:bg-neutral-700 dark:border-neutral-600 dark:text-gray-400"
-                    />
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
+                      Role
+                    </label>
+
+                    <div className="relative">
+                      {/* Icon */}
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <svg
+                          className="w-5 h-5 text-gray-400"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M16 12H8m8 0a4 4 0 10-8 0m8 0v4a4 4 0 01-8 0v-4"
+                          />
+                        </svg>
+                      </div>
+
+                      <input
+                        type="email"
+                        disabled
+                        value={role || ""}
+                        className="w-full rounded-lg border border-gray-300 
+                   pl-10 pr-4 py-2.5 text-sm
+                   bg-gray-100 text-gray-600
+                   focus:outline-none dark:bg-neutral-700 dark:border-neutral-600 dark:text-gray-400"
+                      />
+                    </div>
                   </div>
                 </div>
-
               </div>
 
               <div className="flex justify-end mt-4">
@@ -1390,103 +1443,105 @@ export default function Settings() {
                 </p>
               </div>
 
+
               {/* ================= COMPANY SETTINGS ================= */}
-              <div className="grid md:grid-cols-3 items-start px-6 py-6 gap-4">
+              {role === "admin" && (
+                <div className="grid md:grid-cols-3 items-start px-6 py-6 gap-4">
 
-                <div>
-                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Company settings
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    Update your company logo and name.
-                  </p>
-                </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Company settings
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      Update your company logo and name.
+                    </p>
+                  </div>
 
-                <div className="md:col-span-2 space-y-6">
+                  <div className="md:col-span-2 space-y-6">
 
-                  {/* Logo */}
-                  <div className="flex items-center gap-6">
+                    {/* Logo */}
+                    <div className="flex items-center gap-6">
 
-                    <div className="w-20 h-20 rounded-lg border flex items-center justify-center overflow-hidden dark:border-neutral-700">
-                      {companyLogo ? (
-                        <img src={companyLogo} className="w-full h-full object-cover" />
-                      ) : (
-                        <span className="text-xs text-gray-400">No logo</span>
-                      )}
+                      <div className="w-20 h-20 rounded-lg border flex items-center justify-center overflow-hidden dark:border-neutral-700">
+                        {companyLogo ? (
+                          <img src={companyLogo} className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-xs text-gray-400">No logo</span>
+                        )}
+                      </div>
+
+                      <button
+                        onClick={() => companyFileRef.current?.click()}
+                        className="px-4 py-2 text-sm rounded-lg border dark:border-neutral-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-neutral-700 transition"
+                      >
+                        Upload logo
+                      </button>
+
+                      <input
+                        ref={companyFileRef}
+                        hidden
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) =>
+                          e.target.files && loadCompanyFile(e.target.files[0])
+                        }
+                      />
                     </div>
 
-                    <button
-                      onClick={() => companyFileRef.current?.click()}
-                      className="px-4 py-2 text-sm rounded-lg border dark:border-neutral-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-neutral-700 transition"
-                    >
-                      Upload logo
-                    </button>
-
-                    <input
-                      ref={companyFileRef}
-                      hidden
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) =>
-                        e.target.files && loadCompanyFile(e.target.files[0])
-                      }
-                    />
-                  </div>
-
-                  {/* Company Name */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
-                      Company name
-                    </label>
-                    <input
-                      type="text"
-                      value={companyName}
-                      onChange={(e) => setCompanyName(e.target.value)}
-                      className="w-full md:w-96 rounded-lg border border-gray-300 px-4 py-2.5 text-sm
+                    {/* Company Name */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2 dark:text-gray-300">
+                        Company name
+                      </label>
+                      <input
+                        type="text"
+                        value={companyName}
+                        onChange={(e) => setCompanyName(e.target.value)}
+                        className="w-full md:w-96 rounded-lg border border-gray-300 px-4 py-2.5 text-sm
                    focus:outline-none dark:bg-neutral-800 dark:border-neutral-700 dark:text-gray-300"
-                    />
-                  </div>
+                      />
+                    </div>
 
-                  {/* Save Button */}
-                  <div>
-                    <button
-                      onClick={saveCompanySettings}
-                      disabled={savingCompany}
-                      style={{ backgroundColor: brandColor }}
-                      className="px-5 py-2 rounded-lg text-white transition
+                    {/* Save Button */}
+                    <div>
+                      <button
+                        onClick={saveCompanySettings}
+                        disabled={savingCompany}
+                        style={{ backgroundColor: brandColor }}
+                        className="px-5 py-2 rounded-lg text-white transition
                flex items-center gap-2
                disabled:opacity-60 disabled:cursor-not-allowed"
-                    >
-                      {savingCompany && (
-                        <svg
-                          className="w-4 h-4 animate-spin"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                        >
-                          <circle
-                            className="opacity-25"
-                            cx="12"
-                            cy="12"
-                            r="10"
-                            stroke="white"
-                            strokeWidth="4"
-                          />
-                          <path
-                            className="opacity-75"
-                            fill="white"
-                            d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
-                          />
-                        </svg>
-                      )}
+                      >
+                        {savingCompany && (
+                          <svg
+                            className="w-4 h-4 animate-spin"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                          >
+                            <circle
+                              className="opacity-25"
+                              cx="12"
+                              cy="12"
+                              r="10"
+                              stroke="white"
+                              strokeWidth="4"
+                            />
+                            <path
+                              className="opacity-75"
+                              fill="white"
+                              d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+                            />
+                          </svg>
+                        )}
 
-                      {savingCompany ? "Saving..." : "Save company settings"}
-                    </button>
+                        {savingCompany ? "Saving..." : "Save company settings"}
+                      </button>
+                    </div>
+
+
                   </div>
-
-
                 </div>
-              </div>
-
+              )}
 
 
               {/* Brand Color */}
@@ -1675,8 +1730,8 @@ export default function Settings() {
                 <div
                   key={item.key}
                   className={`grid md:grid-cols-3 px-6 py-6 gap-6 ${index !== arr.length - 1
-                      ? "border-b dark:border-neutral-800"
-                      : ""
+                    ? "border-b dark:border-neutral-800"
+                    : ""
                     }`}
                 >
                   {/* LEFT TEXT */}
@@ -2034,8 +2089,8 @@ function ToggleSwitch({
     <button
       onClick={onChange}
       className={`relative w-10 h-5 rounded-full transition ${enabled
-          ? "bg-[var(--brand-color)]"
-          : "bg-gray-300 dark:bg-neutral-700"
+        ? "bg-[var(--brand-color)]"
+        : "bg-gray-300 dark:bg-neutral-700"
         }`}
     >
       <motion.div
