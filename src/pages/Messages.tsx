@@ -10,6 +10,7 @@ import {
     orderBy,
     onSnapshot,
     deleteDoc,
+    runTransaction,
     serverTimestamp,
 } from "firebase/firestore";
 import { rtdb } from "../firebase";
@@ -19,7 +20,7 @@ import { getAuth } from "firebase/auth";
 import { remove } from "firebase/database";
 import { db } from "../firebase";
 import { useEffect, useState, useRef } from "react";
-import { Send, ArrowLeft, Plus, Trash2, X, Upload, File as FileIcon } from "lucide-react";
+import { Send, ArrowLeft, Plus, Trash2, X, Smile, Reply, Trash, Upload, File as FileIcon } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 /* ================= TYPES ================= */
@@ -90,12 +91,11 @@ export default function Messages() {
     const [selectedMsgs, setSelectedMsgs] = useState<string[]>([]);
     const [showMsgDeleteModal, setShowMsgDeleteModal] = useState(false);
     const [deletingMsgs, setDeletingMsgs] = useState<string[]>([]);
-    const longPressTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [uploadProgress, setUploadProgress] = useState<number | null>(null);
-    const [activeReactionMsg, setActiveReactionMsg] = useState<string | null>(null);
-
+    const [activeActionMsg, setActiveActionMsg] = useState<string | null>(null);
+    const [activeReactionPicker, setActiveReactionPicker] = useState<string | null>(null);
 
 
 
@@ -528,25 +528,10 @@ export default function Messages() {
 
 
 
-    const handleMsgTouchStart = (msg: Message) => {
-        if (msg.senderId !== currentUser?.id) return;
-
-        longPressTimeout.current = setTimeout(() => {
-            setIsMsgDeleteMode(true);
-            setSelectedMsgs([msg.id]);
-        }, 500); // 500ms long press
-    };
-
-    const handleMsgTouchEnd = () => {
-        if (longPressTimeout.current) {
-            clearTimeout(longPressTimeout.current);
-        }
-    };
-
-
     const toggleReaction = async (msg: Message, emoji: string) => {
         if (!activeConversation || !currentUser) return;
 
+        const convRef = doc(db, "conversations", activeConversation);
         const msgRef = doc(
             db,
             "conversations",
@@ -555,67 +540,100 @@ export default function Messages() {
             msg.id
         );
 
-        const msgSnap = await getDoc(msgRef);
-        const msgData = msgSnap.data();
-        if (!msgData) return;
+        try {
+            await runTransaction(db, async (transaction) => {
 
-        const convRef = doc(db, "conversations", activeConversation);
+                const msgSnap = await transaction.get(msgRef);
+                const convSnap = await transaction.get(convRef);
 
-        const reactions = msgData.reactions || {};
-        const updatedReactions: any = { ...reactions };
+                if (!msgSnap.exists() || !convSnap.exists()) return;
 
-        // 🔥 Remove user from ALL emojis first (replace behavior)
-        Object.keys(updatedReactions).forEach((key) => {
-            updatedReactions[key] = updatedReactions[key].filter(
-                (uid: string) => uid !== currentUser.id
-            );
-        });
+                const msgData = msgSnap.data();
+                const convData = convSnap.data();
 
-        const alreadyReacted = reactions[emoji]?.includes(currentUser.id);
+                const reactions = msgData.reactions || {};
+                const updatedReactions: any = { ...reactions };
 
-        // If not already reacted → add
-        if (!alreadyReacted) {
-            updatedReactions[emoji] = [
-                ...(updatedReactions[emoji] || []),
-                currentUser.id,
-            ];
-        }
+                // 🔥 Remove current user from ALL emojis first (replace behavior)
+                Object.keys(updatedReactions).forEach((key) => {
+                    updatedReactions[key] = updatedReactions[key].filter(
+                        (uid: string) => uid !== currentUser.id
+                    );
 
-        await updateDoc(msgRef, {
-            reactions: updatedReactions,
-        });
+                    // Clean empty arrays
+                    if (updatedReactions[key].length === 0) {
+                        delete updatedReactions[key];
+                    }
+                });
 
-        // 🔥 Determine if reacting to own message
-        const reactingToOwnMessage = msg.senderId === currentUser.id;
+                const alreadyReacted = reactions[emoji]?.includes(currentUser.id);
 
-        const activeConvData = conversations.find(
-            (conv) => conv.id === activeConversation
-        );
+                // If user did NOT already react → add reaction
+                if (!alreadyReacted) {
+                    updatedReactions[emoji] = [
+                        ...(updatedReactions[emoji] || []),
+                        currentUser.id,
+                    ];
+                }
 
-        const otherUserId = activeConvData?.participants.find(
-            (id) => id !== currentUser.id
-        );
+                // ✅ Update message reactions atomically
+                transaction.update(msgRef, {
+                    reactions: updatedReactions,
+                });
 
-        if (!otherUserId) return;
+                // 🔥 Determine ownership
+                const reactingToOwnMessage = msg.senderId === currentUser.id;
 
-        // 🔥 Only notify + increment unread if reacting to OTHER user
-        if (!reactingToOwnMessage) {
-            await updateDoc(convRef, {
-                lastMessage: `Reacted ${emoji} to your message`,
-                lastSenderId: currentUser.id,
-                updatedAt: serverTimestamp(),
-                [`unread.${otherUserId}`]:
-                    (activeConvData?.unread?.[otherUserId] || 0) + 1,
+                const otherUserId = convData.participants?.find(
+                    (id: string) => id !== currentUser.id
+                );
+
+                if (!otherUserId) return;
+
+                // ------------------------------------------------
+                // 🔥 ONLY increment unread if:
+                // - reacting to OTHER user's message
+                // - AND it is a NEW reaction (not removing)
+                // ------------------------------------------------
+                if (!reactingToOwnMessage && !alreadyReacted) {
+
+
+                    const currentUnread =
+                        convData.unread?.[otherUserId] || 0;
+
+                    let lastMessageReact = convData.lastMessage;
+                    let lastMessageType = convData.lastMessageType;
+
+                    // 🔥 Only change to reaction message if reacting to OTHER user
+                    if (!reactingToOwnMessage && !alreadyReacted) {
+                        lastMessageReact = `Reacted ${emoji} to your message`;
+                        lastMessageType = reactions;
+                    }
+
+                    transaction.update(convRef, {
+                        lastMessage: lastMessageReact,
+                        lastMessageType: lastMessageType, // ✅ preserved or changed properly
+                        lastSenderId: currentUser.id,
+                        updatedAt: serverTimestamp(),
+                        [`unread.${otherUserId}`]:
+                            !reactingToOwnMessage && !alreadyReacted
+                                ? currentUnread + 1
+                                : currentUnread,
+                    });
+                } else {
+
+                    // Just update timestamp (no unread increment)
+                    transaction.update(convRef, {
+                        updatedAt: serverTimestamp(),
+                    });
+                }
+
             });
-        }
-        else {
-            // 🔥 If reacting to own message → only update timestamp
-            await updateDoc(convRef, {
-                updatedAt: serverTimestamp(),
-            });
+
+        } catch (error) {
+            console.error("Reaction transaction failed:", error);
         }
     };
-
 
 
 
@@ -923,14 +941,13 @@ export default function Messages() {
                                                         : `${otherUser.name} sent a file`;
                                             }
 
-                                            // 🔥 PRIORITY 4 — Normal message
                                             else if (conv.lastMessage) {
-                                                previewText =
-                                                    conv.lastSenderId === currentUser.id
-                                                        ? `Me: ${conv.lastMessage}`
+                                                previewText = isReaction
+                                                    ? conv.lastMessage
+                                                    : conv.lastSenderId === currentUser.id
+                                                        ? `You: ${conv.lastMessage}`
                                                         : conv.lastMessage;
                                             }
-
                                             return (
                                                 <div key={conv.id} className="flex items-center">
                                                     <div
@@ -1098,7 +1115,10 @@ export default function Messages() {
 
                                     </div>
 
-                                    <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-6 pt-12 space-y-4">
+                                    <div ref={messagesContainerRef} onClick={() => {
+                                        setActiveActionMsg(null);
+                                        setActiveReactionPicker(null);
+                                    }} className="flex-1 overflow-y-auto p-6 pt-12 space-y-4">
                                         {loadingMessages ? (
                                             <div className="flex items-center justify-center h-full text-neutral-400">
                                                 Loading conversation...
@@ -1118,7 +1138,7 @@ export default function Messages() {
                                                                 scale: deletingMsgs.includes(msg.id) ? 0.95 : 1,
                                                             }}
                                                             transition={{ duration: 0.3 }}
-                                                            className={`flex ${isMe ? "justify-end" : "justify-start"}`}
+                                                            className={`flex items-end gap-2 group ${isMe ? "justify-end" : "justify-start"}`}
                                                         >
                                                             {isMsgDeleteMode && msg.senderId === currentUser.id && (
                                                                 <input
@@ -1136,79 +1156,62 @@ export default function Messages() {
                                                             )}
 
                                                             {/* Wrapper */}
-                                                            <div className="relative group max-w-[75%]">
+                                                            <div
+                                                                className="relative group max-w-[75%]"
 
-                                                                {/* 💬 Bubble */}
-                                                                <div
-                                                                    style={
-                                                                        isMe && msg.type !== "image"
-                                                                            ? { backgroundColor: "var(--brand-color)" }
-                                                                            : undefined
-                                                                    }
-                                                                    className={`rounded-2xl break-words whitespace-pre-wrap overflow-hidden ${msg.type === "image"
-                                                                        ? "p-1"
-                                                                        : `px-4 py-2 text-sm ${isMe
-                                                                            ? "text-white"
-                                                                            : "bg-neutral-300 text-neutral-900"
-                                                                        }`
-                                                                        }`}
-                                                                >
-                                                                    {(!msg.type || msg.type === "text") && msg.text}
+                                                            >
+                                                                <div className="flex relative">
+                                                                    {/* 💬 Bubble */}
+                                                                    <div
+                                                                        style={
+                                                                            isMe && msg.type !== "image"
+                                                                                ? { backgroundColor: "var(--brand-color)" }
+                                                                                : undefined
+                                                                        }
+                                                                        className={`rounded-2xl break-words whitespace-pre-wrap overflow-hidden ${msg.type === "image"
+                                                                            ? "p-1"
+                                                                            : `px-4 py-2 text-sm ${isMe
+                                                                                ? "text-white"
+                                                                                : "bg-neutral-300 text-neutral-900"
+                                                                            }`
+                                                                            }`}
 
-                                                                    {msg.type === "image" && (
-                                                                        <img
-                                                                            src={msg.fileUrl}
-                                                                            className="max-w-[260px] max-h-[300px] rounded-xl object-cover"
-                                                                        />
-                                                                    )}
+                                                                        onClick={() => {
+                                                                            // Mobile toggle
+                                                                            if (window.innerWidth < 768) {
+                                                                                setActiveActionMsg(activeActionMsg === msg.id ? null : msg.id);
+                                                                            }
+                                                                        }}
+                                                                        
+                                                                    >
+                                                                        {(!msg.type || msg.type === "text") && msg.text}
 
-                                                                    {msg.type === "file" && (
-                                                                        <a
-                                                                            href={msg.fileUrl}
-                                                                            target="_blank"
-                                                                            rel="noopener noreferrer"
-                                                                            className="flex items-center gap-2"
-                                                                        >
-                                                                            <FileIcon size={18} />
-                                                                            <span className="underline">{msg.fileName}</span>
-                                                                        </a>
-                                                                    )}
-                                                                </div>
+                                                                        {msg.type === "image" && (
+                                                                            <img
+                                                                                src={msg.fileUrl}
+                                                                                className="max-w-[260px] max-h-[300px] rounded-xl object-cover"
+                                                                            />
+                                                                        )}
 
-                                                                {/* 🎉 Reaction Picker */}
-                                                                <div
-                                                                    className={`
-        absolute -top-9
-        ${isMe ? "right-0" : "left-0"}
-        opacity-0 group-hover:opacity-100
-        scale-95 group-hover:scale-100
-        transition-all duration-150
-        pointer-events-none group-hover:pointer-events-auto
-        bg-white dark:bg-neutral-700
-        shadow-xl px-4 py-1 rounded-full
-        flex gap-2 text-xl z-50
-      `}
-                                                                >
-                                                                    {["👍", "❤️", "😂", "😮", "😢"].map((emoji) => (
-                                                                        <button
-                                                                            key={emoji}
-                                                                            onClick={() => toggleReaction(msg, emoji)}
-                                                                            className="hover:scale-125 transition"
-                                                                        >
-                                                                            {emoji}
-                                                                        </button>
-                                                                    ))}
-                                                                </div>
-
-
-                                                                {msg.reactions &&
-                                                                    Object.entries(msg.reactions).some(
-                                                                        ([_, users]) => users.length > 0
-                                                                    ) && (
-                                                                        <div
-                                                                            className={`
-            absolute -bottom-3
-            ${isMe ? "left-0 translate-x-1/6" : "right-0 -translate-x-1/6"}
+                                                                        {msg.type === "file" && (
+                                                                            <a
+                                                                                href={msg.fileUrl}
+                                                                                target="_blank"
+                                                                                rel="noopener noreferrer"
+                                                                                className="flex items-center gap-2"
+                                                                            >
+                                                                                <FileIcon size={18} />
+                                                                                <span className="underline">{msg.fileName}</span>
+                                                                            </a>
+                                                                        )}
+                                                                        {msg.reactions &&
+                                                                            Object.entries(msg.reactions).some(
+                                                                                ([_, users]) => users.length > 0
+                                                                            ) && (
+                                                                                <div
+                                                                                    className={`
+            absolute -bottom-3 
+            ${isMe ? "left-[95px]  translate-x-1/2" : "right-[70px] -translate-x-1/6"}
             flex items-center gap-1
             bg-white dark:bg-neutral-700
             shadow-md
@@ -1217,14 +1220,108 @@ export default function Messages() {
             text-xs
             z-20
           `}
-                                                                        >
-                                                                            {Object.entries(msg.reactions).map(([emoji, users]) =>
-                                                                                users.length > 0 ? (
-                                                                                    <span key={emoji}>{emoji}</span>
-                                                                                ) : null
+                                                                                >
+                                                                                    {Object.entries(msg.reactions).map(([emoji, users]) =>
+                                                                                        users.length > 0 ? (
+                                                                                            <span key={emoji}>{emoji}</span>
+                                                                                        ) : null
+                                                                                    )}
+                                                                                </div>
                                                                             )}
+                                                                    </div>
+
+                                                                    {activeReactionPicker === msg.id && (
+                                                                        <div
+                                                                            onClick={(e) => e.stopPropagation()}
+                                                                            className={`
+      absolute
+      ${isMe ? "right-12" : "left-12"}
+      -top-[50px]
+      flex items-center gap-2
+      dark:bg-neutral-700
+      px-3 py-2
+      rounded-full
+      shadow-xl
+      z-50
+    `}
+                                                                        >
+                                                                            {["❤️", "😂", "😮", "😢", "😡", "👍"].map((emoji) => (
+                                                                                <button
+                                                                                    key={emoji}
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        toggleReaction(msg, emoji);
+                                                                                        setActiveReactionPicker(null);
+                                                                                        setActiveActionMsg(null);
+                                                                                    }}
+                                                                                    className="text-xl hover:scale-125 transition"
+                                                                                >
+                                                                                    {emoji}
+                                                                                </button>
+                                                                            ))}
+
+                                                                            {/* Plus button */}
+                                                                            <button
+                                                                                className="text-white text-lg hover:scale-110 transition"
+                                                                            >
+                                                                                +
+                                                                            </button>
                                                                         </div>
                                                                     )}
+
+                                                                    {/* 🔥 Desktop Action Buttons (SIDE) */}
+                                                                    <div
+                                                                        className={`
+        hidden md:flex items-center gap-2
+        transition-all duration-200
+        opacity-0 translate-x-2
+        group-hover:opacity-100 group-hover:translate-x-0
+        ${isMe ? "order-first mr-2" : "ml-2"}
+    `}
+                                                                    >
+                                                                        {/* React */}
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                setActiveReactionPicker(
+                                                                                    activeReactionPicker === msg.id ? null : msg.id
+                                                                                );
+                                                                            }}
+                                                                            className="w-8 h-8 flex items-center justify-center
+                   rounded-full dark:bg-neutral-700 dark:text-white bg-neutral-400 text-neutral-700 hover:scale-110 transition"
+                                                                        >
+                                                                            <Smile size={16} />
+                                                                        </button>
+
+                                                                        {/* Reply */}
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                setNewMessage(`@${activeUser?.name} `);
+                                                                            }}
+                                                                            className="w-8 h-8 flex items-center justify-center
+                   rounded-full dark:bg-neutral-700 dark:text-white bg-neutral-400 text-neutral-700 hover:scale-110 transition"
+                                                                        >
+                                                                            <Reply size={16} />
+                                                                        </button>
+
+                                                                        {/* Delete (only your message) */}
+                                                                        {isMe && (
+                                                                            <button
+                                                                                onClick={() => {
+                                                                                    setSelectedMsgs([msg.id]);
+                                                                                    setShowMsgDeleteModal(true);
+                                                                                }}
+                                                                                className="w-8 h-8 flex items-center justify-center
+                       rounded-full bg-red-600 text-white hover:scale-110 transition"
+                                                                            >
+                                                                                <Trash2 size={16} />
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+
+
+
+                                                                </div>
                                                             </div>
                                                         </motion.div>
 
@@ -1448,46 +1545,61 @@ export default function Messages() {
                                                 const otherId = conv.participants.find(
                                                     (p) => p !== currentUser.id
                                                 );
+
                                                 const isActive = activeConversation === conv.id;
                                                 const otherUser = users.find((u) => u.id === otherId);
                                                 const unreadCount = conv.unread?.[currentUser.id] ?? 0;
                                                 const isUnread = unreadCount > 0;
+
                                                 if (!otherUser) return null;
 
-                                                // 🔥 MEDIA DETECTION
+                                                const isReaction = conv.lastMessageType === "reaction";
+
                                                 let previewText = "Start conversation";
 
-                                                if (unreadCount > 0) {
-                                                    // 🔥 Replace with new messages count
+                                                // 🔥 PRIORITY 1 — Reaction (overrides unread)
+                                                if (isReaction && conv.lastMessage) {
+                                                    previewText = conv.lastMessage;
+                                                }
+
+                                                // 🔥 PRIORITY 2 — Multiple unread
+                                                else if (unreadCount > 1) {
                                                     previewText =
                                                         unreadCount > 9
                                                             ? "9+ new messages"
-                                                            : `${unreadCount} new message${unreadCount > 1 ? "s" : ""}`;
-                                                } else if (conv.lastMessage) {
+                                                            : `${unreadCount} new messages`;
+                                                }
+
+                                                // 🔥 PRIORITY 3 — Media
+                                                else if (conv.lastMessageType === "image") {
                                                     previewText =
                                                         conv.lastSenderId === currentUser.id
-                                                            ? `Me: ${conv.lastMessage}`
+                                                            ? "You sent a photo"
+                                                            : `${otherUser.name} sent a photo`;
+                                                }
+
+                                                else if (conv.lastMessageType === "video") {
+                                                    previewText =
+                                                        conv.lastSenderId === currentUser.id
+                                                            ? "You sent a video"
+                                                            : `${otherUser.name} sent a video`;
+                                                }
+
+                                                else if (conv.lastMessageType === "file") {
+                                                    previewText =
+                                                        conv.lastSenderId === currentUser.id
+                                                            ? "You sent a file"
+                                                            : `${otherUser.name} sent a file`;
+                                                }
+
+                                                // 🔥 PRIORITY 4 — Normal message
+                                                else if (conv.lastMessage) {
+                                                    previewText = isReaction
+                                                        ? conv.lastMessage
+                                                        : conv.lastSenderId === currentUser.id
+                                                            ? `You: ${conv.lastMessage}`
                                                             : conv.lastMessage;
                                                 }
-
-                                                // 🔥 Optional media detection if you store type
-                                                if (conv.lastMessageType) {
-                                                    const senderName =
-                                                        conv.lastSenderId === currentUser.id ? "You" : otherUser.name;
-
-                                                    if (conv.lastMessageType === "image") {
-                                                        previewText = `${senderName} sent a photo`;
-                                                    }
-
-                                                    if (conv.lastMessageType === "file") {
-                                                        previewText = `${senderName} sent a file`;
-                                                    }
-
-                                                    if (conv.lastMessageType === "video") {
-                                                        previewText = `${senderName} sent a video`;
-                                                    }
-                                                }
-
 
                                                 return (
                                                     <div key={conv.id} className="flex items-center">
@@ -1502,13 +1614,12 @@ export default function Messages() {
                                                                     [`unread.${currentUser.id}`]: 0,
                                                                 });
                                                             }}
-                                                            className={`flex items-center justify-between pr-4 pl-5 py-4 cursor-pointer transition-all duration-200 w-full
-            ${isActive
+                                                            className={`flex items-center justify-between p-4 cursor-pointer transition-all duration-200 w-full
+                ${isActive
                                                                     ? "dark:bg-neutral-800 hover:bg-neutral-300 border-l-4 rounded border-[var(--brand-color)]"
                                                                     : "hover:bg-neutral-300 dark:hover:bg-neutral-600"
                                                                 }`}
                                                         >
-                                                            {/* LEFT SIDE */}
                                                             <div className="flex items-center gap-3 w-full">
                                                                 <div className="relative">
                                                                     <img
@@ -1517,7 +1628,7 @@ export default function Messages() {
                                                                     />
                                                                     <span
                                                                         className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white 
-                        ${onlineUsers[otherUser.id] ? "bg-green-500" : "hidden"}`}
+                      ${onlineUsers[otherUser.id] ? "bg-green-500" : "hidden"}`}
                                                                     />
                                                                 </div>
 
@@ -1525,7 +1636,7 @@ export default function Messages() {
                                                                     <p
                                                                         className={`text-sm ${isActive
                                                                             ? "font-semibold text-[var(--brand-color)]"
-                                                                            : isUnread
+                                                                            : isUnread && !isReaction
                                                                                 ? "font-semibold text-neutral-900 dark:text-white"
                                                                                 : "text-neutral-800 dark:text-white"
                                                                             }`}
@@ -1534,10 +1645,9 @@ export default function Messages() {
                                                                     </p>
 
                                                                     <p
-                                                                        className={`text-xs whitespace-nowrap overflow-hidden text-ellipsis
-                        ${isUnread
-                                                                                ? "font-semibold dark:text-white"
-                                                                                : "text-neutral-500"
+                                                                        className={`text-xs truncate ${isUnread && !isReaction
+                                                                            ? "font-semibold dark:text-white"
+                                                                            : "text-neutral-500"
                                                                             }`}
                                                                     >
                                                                         {previewText}
@@ -1563,12 +1673,11 @@ export default function Messages() {
                                                                                 : [...prev, conv.id]
                                                                         );
                                                                     }}
-                                                                    className="mr-4"
+                                                                    className="ml-4"
                                                                 />
                                                             )}
                                                         </div>
                                                     </div>
-
                                                 );
                                             })}
                                         </div>
@@ -1662,7 +1771,10 @@ export default function Messages() {
                                             </div>
                                         </div>
 
-                                        <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-6 space-y-4">
+                                        <div ref={messagesContainerRef} onClick={() => {
+                                            setActiveActionMsg(null);
+                                            setActiveReactionPicker(null);
+                                        }} className="flex-1 overflow-y-auto p-6 space-y-4">
                                             {loadingMessages ? (
                                                 <div className="flex items-center justify-center h-full text-neutral-400">
                                                     Loading conversation...
@@ -1682,11 +1794,8 @@ export default function Messages() {
                                                                     scale: deletingMsgs.includes(msg.id) ? 0.95 : 1,
                                                                 }}
                                                                 transition={{ duration: 0.3 }}
-                                                                onTouchStart={() => handleMsgTouchStart(msg)}
-                                                                onTouchEnd={handleMsgTouchEnd}
-                                                                onMouseDown={() => handleMsgTouchStart(msg)}
-                                                                onMouseUp={handleMsgTouchEnd}
-                                                                className={`flex ${isMe ? "justify-end" : "justify-start"}`}
+
+                                                                className={`flex items-center gap-2 ${isMe ? "justify-end" : "justify-start"}`}
                                                             >
                                                                 {isMsgDeleteMode && msg.senderId === currentUser.id && (
                                                                     <input
@@ -1703,100 +1812,169 @@ export default function Messages() {
                                                                     />
                                                                 )}
 
-                                                                <div className="relative max-w-[75%]">
-
-                                                                    {/* Bubble */}
-                                                                    <div
-                                                                        style={
-                                                                            isMe && msg.type !== "image"
-                                                                                ? { backgroundColor: "var(--brand-color)" }
-                                                                                : undefined
-                                                                        }
-                                                                        className={`rounded-2xl break-words whitespace-pre-wrap overflow-hidden ${msg.type === "image"
-                                                                            ? "p-1"
-                                                                            : `px-4 py-2 text-sm ${isMe
-                                                                                ? "text-white"
-                                                                                : "bg-neutral-300 text-neutral-900"
-                                                                            }`
-                                                                            }`}
-                                                                        onClick={() =>
-                                                                            setActiveReactionMsg(
-                                                                                activeReactionMsg === msg.id ? null : msg.id
-                                                                            )
-                                                                        }
-                                                                    >
-                                                                        {(!msg.type || msg.type === "text") && msg.text}
-
-                                                                        {msg.type === "image" && (
-                                                                            <img
-                                                                                src={msg.fileUrl}
-                                                                                className="max-w-[260px] max-h-[300px] rounded-xl object-cover"
-                                                                            />
-                                                                        )}
-
-                                                                        {msg.type === "file" && (
-                                                                            <a
-                                                                                href={msg.fileUrl}
-                                                                                target="_blank"
-                                                                                rel="noopener noreferrer"
-                                                                                className="flex items-center gap-2"
-                                                                            >
-                                                                                <FileIcon size={18} />
-                                                                                <span className="underline">{msg.fileName}</span>
-                                                                            </a>
-                                                                        )}
-                                                                    </div>
-
-                                                                    {/* Mobile Picker */}
-                                                                    {activeReactionMsg === msg.id && (
+                                                                <div className="relative group max-w-[75%] ">
+                                                                    <div className="flex relative">
+                                                                        {/* Bubble */}
                                                                         <div
-                                                                            className={`
-          absolute -top-10
-          ${isMe ? "right-0" : "left-0"}
-          bg-white dark:bg-neutral-800
-          shadow-xl px-4 py-1 rounded-full
-          flex gap-2 text-[24px] z-50
-        `}
+                                                                            style={
+                                                                                isMe && msg.type !== "image"
+                                                                                    ? { backgroundColor: "var(--brand-color)" }
+                                                                                    : undefined
+                                                                            }
+                                                                            className={`rounded-2xl break-words whitespace-pre-wrap overflow-hidden ${msg.type === "image"
+                                                                                ? "p-1"
+                                                                                : `px-4 py-2 text-sm ${isMe
+                                                                                    ? "text-white"
+                                                                                    : "bg-neutral-300 text-neutral-900"
+                                                                                }`
+                                                                                }`}
+                                                                            onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            if (window.innerWidth < 768) {
+                                                                                setActiveActionMsg(activeActionMsg === msg.id ? null : msg.id);
+                                                                            }
+                                                                        }}
                                                                         >
-                                                                            {["👍", "❤️", "😂", "😮", "😢"].map((emoji) => (
-                                                                                <button
-                                                                                    key={emoji}
-                                                                                    onClick={() => {
-                                                                                        toggleReaction(msg, emoji);
-                                                                                        setActiveReactionMsg(null);
-                                                                                    }}
-                                                                                    className="hover:scale-125 transition"
-                                                                                >
-                                                                                    {emoji}
-                                                                                </button>
-                                                                            ))}
-                                                                        </div>
-                                                                    )}
+                                                                            {(!msg.type || msg.type === "text") && msg.text}
 
-                                                                    {/* Reaction Badge */}
-                                                                    {msg.reactions &&
-                                                                        Object.entries(msg.reactions).some(
-                                                                            ([_, users]) => users.length > 0
-                                                                        ) && (
+                                                                            {msg.type === "image" && (
+                                                                                <img
+                                                                                    src={msg.fileUrl}
+                                                                                    className="max-w-[260px] max-h-[300px] rounded-xl object-cover"
+                                                                                />
+                                                                            )}
+
+                                                                            {msg.type === "file" && (
+                                                                                <a
+                                                                                    href={msg.fileUrl}
+                                                                                    target="_blank"
+                                                                                    rel="noopener noreferrer"
+                                                                                    className="flex items-center gap-2"
+                                                                                >
+                                                                                    <FileIcon size={18} />
+                                                                                    <span className="underline">{msg.fileName}</span>
+                                                                                </a>
+                                                                            )}
+                                                                        </div>
+
+                                                                        {/* 🔥 Action Buttons (RIGHT SIDE like Messenger) */}
+                                                                        {activeActionMsg === msg.id && (
                                                                             <div
                                                                                 className={`
-            absolute -bottom-3
-            ${isMe ? "left-0 translate-x-1/6" : "right-0 -translate-x-1/6"}
-            flex items-center gap-1
-            bg-white dark:bg-neutral-700
-            shadow-md
-            rounded-full
-            px-2 py-0.5
-            text-xs
-          `}
+                                                                             flex items-center gap-2 ml-2
+                                                                                    ${isMe ? "order-first mr-2 ml-0" : ""}
+                                                                             `}
                                                                             >
-                                                                                {Object.entries(msg.reactions).map(([emoji, users]) =>
-                                                                                    users.length > 0 ? (
-                                                                                        <span key={emoji}>{emoji}</span>
-                                                                                    ) : null
+                                                                                {/* React */}
+                                                                                <button
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        setActiveReactionPicker(
+                                                                                            activeReactionPicker === msg.id ? null : msg.id
+                                                                                        );
+                                                                                    }}
+                                                                                    className="w-8 h-8 flex items-center justify-center 
+                                                                                    rounded-full dark:bg-neutral-700 dark:text-white bg-neutral-400 text-neutral-700"
+                                                                                >
+                                                                                    <Smile size={16} />
+                                                                                </button>
+
+                                                                                {/* Reply */}
+                                                                                <button
+                                                                                    onClick={() => {
+                                                                                        setNewMessage(`@${activeUser?.name} `);
+                                                                                        setActiveActionMsg(null);
+                                                                                    }}
+                                                                                    className="w-8 h-8 flex items-center justify-center 
+                                                                                    rounded-full dark:bg-neutral-700 dark:text-white bg-neutral-400 text-neutral-700"
+                                                                                >
+                                                                                    <Reply size={16} />
+                                                                                </button>
+
+                                                                                {/* Delete (only your message) */}
+                                                                                {isMe && (
+                                                                                    <button
+                                                                                        onClick={() => {
+                                                                                            setSelectedMsgs([msg.id]);
+                                                                                            setShowMsgDeleteModal(true);
+                                                                                            setActiveActionMsg(null);
+                                                                                        }}
+                                                                                        className="w-8 h-8 flex items-center justify-center 
+                                                                                         rounded-full bg-red-600 text-white"
+                                                                                    >
+                                                                                        <Trash size={16} />
+                                                                                    </button>
                                                                                 )}
                                                                             </div>
                                                                         )}
+
+                                                                        {msg.reactions &&
+                                                                            Object.entries(msg.reactions).some(
+                                                                                ([_, users]) => users.length > 0
+                                                                            ) && (
+                                                                                <div
+                                                                                    className={`
+                absolute -bottom-3
+                ${isMe ? "right-0 translate-x-2/2" : "left-0 -translate-x-1/4"}
+                flex items-center gap-1
+                bg-white dark:bg-neutral-700
+                shadow-md
+                rounded-full
+                px-2 py-0.5
+                text-xs
+                z-20
+            `}
+                                                                                >
+                                                                                    {Object.entries(msg.reactions).map(([emoji, users]) =>
+                                                                                        users.length > 0 ? (
+                                                                                            <span key={emoji}>{emoji}</span>
+                                                                                        ) : null
+                                                                                    )}
+
+
+                                                                                   
+                                                                                </div>
+                                                                            )}
+
+                                                                             {activeReactionPicker === msg.id && (
+                                                                                        <div
+                                                                                            className={`
+      absolute
+      ${isMe ? "right-12" : "left-12"}
+      -top-[50px]
+      flex items-center gap-2
+      dark:bg-neutral-700
+      px-3 py-2
+      rounded-full
+      shadow-xl
+      z-50
+    `}
+                                                                                        >
+                                                                                            {["❤️", "😂", "😮", "😢", "😡", "👍"].map((emoji) => (
+                                                                                                <button
+                                                                                                    key={emoji}
+                                                                                                    onClick={(e) => {
+                                                                                                        e.stopPropagation();
+                                                                                                        toggleReaction(msg, emoji);
+                                                                                                        setActiveReactionPicker(null);
+                                                                                                        setActiveActionMsg(null);
+                                                                                                    }}
+                                                                                                    className="text-xl hover:scale-125 transition"
+                                                                                                >
+                                                                                                    {emoji}
+                                                                                                </button>
+                                                                                            ))}
+
+                                                                                            {/* Plus button */}
+                                                                                            <button
+                                                                                                className="dark:text-white text-lg hover:scale-110 transition"
+                                                                                            >
+                                                                                                +
+                                                                                            </button>
+                                                                                        </div>
+                                                                                    )}
+
+                                                                    </div>
                                                                 </div>
                                                             </motion.div>
 
@@ -1930,7 +2108,7 @@ export default function Messages() {
                                             />
                                             <button
                                                 onClick={handleSend}
-                                                
+
                                                 disabled={!newMessage.trim() && selectedFiles.length === 0}
                                                 className="p-2 transition-colors disabled:opacity-50"
                                             >
