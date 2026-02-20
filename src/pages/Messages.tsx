@@ -1354,7 +1354,7 @@ export default function Messages() {
 
 
                                     {selectedFiles.length > 0 && (
-                                        <div className="px-4 py-3 border-t border-neutral-700 bg-neutral-800 flex gap-3 overflow-x-auto">
+                                        <div className="px-4 py-3 border-t border-neutral-300 dark:border-neutral-700 dark:bg-neutral-800 flex gap-3 overflow-x-auto">
                                             {selectedFiles.map((file, index) => (
                                                 <div key={index} className="relative">
                                                     {file.type.startsWith("image/") ? (
@@ -1390,7 +1390,7 @@ export default function Messages() {
 
                                         <button
                                             onClick={() => fileInputRef.current?.click()}
-                                            className="p-2 text-neutral-500 hover:text-white transition"
+                                            className="p-2 dark:text-neutral-500 hover:text-white transition"
                                         >
                                             <Upload size={18} />
                                         </button>
@@ -1410,7 +1410,7 @@ export default function Messages() {
                                         {uploadProgress !== null && (
                                             <div className="px-4 py-2 text-xs text-neutral-500">
                                                 Uploading... {uploadProgress}%
-                                                <div className="w-full bg-neutral-300 h-1 mt-1 rounded">
+                                                <div className="w-full dark:bg-neutral-300 h-1 mt-1 rounded">
                                                     <div
                                                         className="h-1 rounded"
                                                         style={{
