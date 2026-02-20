@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useRef, useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -36,7 +36,7 @@ import { getDatabase, ref, set, onDisconnect } from "firebase/database";
 
 
 export default function Layout() {
-  const { user, role, logout } = useAuth();
+  const { user, profile, role, logout } = useAuth();
   useTheme(); // ensures CSS variable is applied
 
   const navigate = useNavigate();
@@ -44,7 +44,8 @@ export default function Layout() {
   const { theme, toggleTheme } = useTheme();
   const auth = getAuth();
   const firebaseUser = auth.currentUser;
-
+  const prevUnreadRef = useRef(0);
+  const [animateBounce, setAnimateBounce] = useState(false);
   const rtdb = getDatabase();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [open, setOpen] = useState(true);
@@ -55,6 +56,7 @@ export default function Layout() {
   const [companyLogo, setCompanyLogo] = useState<string | null>(null);
   const [companyImage] = useState<string | null>(null);
   const [totalUnread, setTotalUnread] = useState(0);
+  const isMessagesPage = location.pathname === "/dashboard/messages";
   const routeMap: Record<string, string> = {
     "/dashboard": "Overview",
     "/dashboard/analytics": "Analytics",
@@ -79,10 +81,25 @@ export default function Layout() {
   const handleLogout = async () => {
     try {
       setIsLoggingOut(true);
+
+      if (firebaseUser) {
+        const userStatusRef = ref(rtdb, `status/${firebaseUser.uid}`);
+
+
+        await set(userStatusRef, {
+          online: false,
+          lastChanged: Date.now(),
+        });
+      }
+
       await logout();
+
       setShowLogout(false);
       navigate("/");
-    } catch {
+
+    } catch (error) {
+      console.error("Logout error:", error);
+    } finally {
       setIsLoggingOut(false);
     }
   };
@@ -159,7 +176,28 @@ export default function Layout() {
 
   }, [firebaseUser]);
 
+  useEffect(() => {
+    // 🔥 Bounce only when unread increases
+    if (totalUnread > prevUnreadRef.current) {
+      setAnimateBounce(true);
 
+      setTimeout(() => {
+        setAnimateBounce(false);
+      }, 600);
+    }
+
+    prevUnreadRef.current = totalUnread;
+
+    // 🔥 Sync browser tab title
+    const baseTitle = companyName || "Dashboard";
+
+    if (totalUnread > 0) {
+      document.title = `(${totalUnread}) ${baseTitle}`;
+    } else {
+      document.title = baseTitle;
+    }
+
+  }, [totalUnread, companyName]);
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-black relative overflow-x-hidden transition-colors duration-300">
@@ -309,15 +347,6 @@ export default function Layout() {
                 active={location.pathname === "/dashboard/analytics"}
                 onClick={() => goTo("/dashboard/analytics")}
               />
-              <MenuItem
-                icon={<Mail size={20} />}
-                label="Messages"
-                open={open || mobileOpen}
-                active={location.pathname === "/dashboard/messages"}
-                badge={totalUnread}
-                onClick={() => goTo("/dashboard/messages")}
-              />
-
             </>
           )}
 
@@ -335,15 +364,6 @@ export default function Layout() {
                   goTo("/dashboard/listings")
                 }
               />
-              <MenuItem
-                icon={<Mail size={20} />}
-                label="Messages"
-                open={open || mobileOpen}
-                active={location.pathname === "/dashboard/messages"}
-                badge={totalUnread}
-                onClick={() => goTo("/dashboard/messages")}
-              />
-
             </>
           )}
 
@@ -361,15 +381,6 @@ export default function Layout() {
                   goTo("/dashboard/bookings")
                 }
               />
-              <MenuItem
-                icon={<Mail size={20} />}
-                label="Messages"
-                open={open || mobileOpen}
-                active={location.pathname === "/dashboard/messages"}
-                badge={totalUnread}
-                onClick={() => goTo("/dashboard/messages")}
-              />
-
             </>
           )}
 
@@ -396,7 +407,7 @@ export default function Layout() {
                 src={
                   user.photoURL ||
                   `https://ui-avatars.com/api/?name=${encodeURIComponent(
-                    user.displayName ||
+                    profile?.name ||
                     user.email ||
                     "User"
                   )}`
@@ -407,7 +418,7 @@ export default function Layout() {
               {(open || mobileOpen) && (
                 <div className="text-left truncate">
                   <p className="text-sm font-medium text-gray-900 dark:text-white">
-                    {user.displayName || "No Name"}
+                    {profile?.name || "No Name"}
                   </p>
                   <p className="text-xs text-gray-400 truncate max-w-[140px]">
                     {user.email}
@@ -452,6 +463,79 @@ export default function Layout() {
           </div>
 
           <div className="flex items-center gap-4">
+            <div className="relative group">
+
+              <button
+                onClick={() => navigate("/dashboard/messages")}
+                className={`
+      relative
+      w-9 h-9 sm:w-10 sm:h-10
+      rounded-lg
+      flex items-center justify-center
+      text-lg
+      transition
+      hover:scale-125
+      ${animateBounce ? "animate-bounce" : ""}
+    `}
+              >
+                <Mail
+                  size={22}
+                  className={`
+    transition-colors duration-200
+    ${isMessagesPage
+                      ? ""
+                      : "text-gray-600 dark:text-gray-300"}
+  `}
+                  style={
+                    isMessagesPage
+                      ? { color: "var(--brand-color)" }
+                      : undefined
+                  }
+                />
+
+                {/* 🔥 Pulse Badge */}
+                {totalUnread > 0 && (
+                  <>
+                    {/* Pulse Ring */}
+                    <span className="absolute -top-1 -right-1 flex h-4 w-4">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
+                    </span>
+
+                    <span
+                      className="
+    absolute -top-1 -right-1
+    bg-red-600 text-white
+    text-[10px] font-semibold
+    rounded-full
+    h-[18px] min-w-[18px]
+    flex items-center justify-center
+    leading-none
+    px-1
+  "
+                    >
+                      {totalUnread > 99 ? "99+" : totalUnread}
+                    </span>
+                  </>
+                )}
+              </button>
+
+              {/* 🔥 Tooltip */}
+              <div
+                className="
+      absolute top-full mb-2 left-1/2 -translate-x-1/2
+      px-2 py-1 text-xs
+      bg-black text-white rounded
+      opacity-0 group-hover:opacity-100
+      transition pointer-events-none
+      whitespace-nowrap
+    "
+              >
+                {totalUnread > 0
+                  ? `${totalUnread} unread message${totalUnread > 1 ? "s" : ""}`
+                  : "No unread messages"}
+              </div>
+
+            </div>
             {user && (
               <p className="text-sm text-gray-700 dark:text-gray-300 leading-tight">
                 <span className="block sm:inline">Welcome,</span>
@@ -459,7 +543,7 @@ export default function Layout() {
                   className="block sm:inline sm:ml-1"
                   style={{ color: "var(--brand-color)" }}
                 >
-                  {user.displayName || "No Name"}
+                  {profile?.name || "No Name"}
                 </span>
                 <span className="hidden sm:ml-1">👋</span>
               </p>
