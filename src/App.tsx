@@ -9,27 +9,29 @@ import {
   Suspense,
 } from "react";
 
-
 import GlobalLoader from "./components/GlobalLoader";
 import { useAuth } from "./context/AuthContext";
 
 import Layout from "./components/Layout";
 import PrivateRoute from "./components/PrivateRoute";
-import AdminRoute from "./components/AdminRoutes";
+import AdminRoute from "./components/AdminRoutes"; // ✅ FIXED NAME
 
 /* Lazy Pages */
 const Auth = lazy(() => import("./pages/Auth"));
-const Dashboard = lazy(() => import("./pages/Dashboard"));
-const Profile = lazy(() => import("./pages/Profile"));
-const Users = lazy(() => import("./pages/Users"));
-const Settings = lazy(() => import("./pages/Settings"));
+const Dashboard = lazy(
+  () => import("./pages/Dashboard")
+);
+const Users = lazy(
+  () => import("./pages/Users")
+);
 const Messages = lazy(
   () => import("./pages/Messages")
 );
 
+const Settings = lazy(() => import("./pages/Settings"));
+
 export default function App() {
   const { loading } = useAuth();
-
 
   return (
     <>
@@ -47,7 +49,10 @@ export default function App() {
         <Routes>
 
           {/* ================= PUBLIC ================= */}
-          <Route path="/" element={<Auth />} />
+          <Route
+            path="/"
+            element={<Auth />}
+          />
 
           {/* ================= PROTECTED ================= */}
           <Route
@@ -64,12 +69,6 @@ export default function App() {
               element={<Dashboard />}
             />
 
-            {/* Profile */}
-            <Route
-              path="/dashboard/profile"
-              element={<Profile />}
-            />
-
             {/* Admin → Users */}
             <Route
               path="/dashboard/users"
@@ -79,6 +78,7 @@ export default function App() {
                 </AdminRoute>
               }
             />
+
               {/* Admin → Messages */}
               <Route
               path="/dashboard/messages"
@@ -86,11 +86,12 @@ export default function App() {
                   <Messages />
               }
             />
-            {/* Settings */}
+
             <Route
               path="/dashboard/settings"
               element={<Settings />}
             />
+
 
           </Route>
 
@@ -98,7 +99,10 @@ export default function App() {
           <Route
             path="*"
             element={
-              <Navigate to="/dashboard" replace />
+              <Navigate
+                to="/dashboard"
+                replace
+              />
             }
           />
 
