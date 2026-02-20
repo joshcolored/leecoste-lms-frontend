@@ -1,13 +1,10 @@
 import { useEffect, useState } from "react";
-import axios from "axios";
+import api from "../api/axios";
 import { useAuth } from "../context/AuthContext";
-import DashboardSkeleton from "../skeletons/DashboardSkeleton";
 import {
   Users,
   BadgeCheck,
   BadgeX,
-  // Clock
-
 } from "lucide-react";
 
 import {
@@ -16,9 +13,14 @@ import {
   XAxis,
   Tooltip,
   ResponsiveContainer,
+  BarChart,
+  Bar,
+  CartesianGrid,
+  Legend,
 } from "recharts";
 
-/* API Stats */
+/* ================= TYPES ================= */
+
 interface Stats {
   totalUsers: number;
   verifiedUsers: number;
@@ -35,7 +37,6 @@ export default function Dashboard() {
   const [range, setRange] = useState("12m");
 
   const [stats, setStats] = useState<Stats | null>(null);
-
   const [showFilters, setShowFilters] = useState(false);
   const [showDate, setShowDate] = useState(false);
 
@@ -47,107 +48,68 @@ export default function Dashboard() {
 
   const [userType, setUserType] = useState("all");
 
-  const [loading, setLoading] = useState(true);
-
-  // const [sessionType, setSessionType] = useState("Temporary");
-  // const [expiresIn, setExpiresIn] = useState("");
+  const [loadingChart, setLoadingChart] = useState(true);
 
   const { role } = useAuth();
 
-
-  /* ================= LOAD STATS ================= */
-
-  useEffect(() => {
-    axios
-      .get("http://172.30.2.13:5000/api/stats")
-      .then((res) => setStats(res.data))
-      .finally(() => setLoading(false));
-  }, []);
-
-
-  /* ================= SESSION ================= */
-
-  // useEffect(() => {
-
-  //   const session = localStorage.getItem("auth_session");
-
-  //   if (!session) return;
-
-  //   const data = JSON.parse(session);
-
-  //   if (data.remember) {
-
-  //     setSessionType("Persistent");
-
-  //     const daysLeft =
-  //       30 -
-  //       Math.floor(
-  //         (Date.now() - data.loginAt) /
-  //         (1000 * 60 * 60 * 24)
-  //       );
-
-  //     setExpiresIn(`${daysLeft} days left`);
-
-  //   } else {
-
-  //     setSessionType("Temporary");
-  //     setExpiresIn("");
-
-  //   }
-
-  // }, []);
-
-
-  /* ================= LOAD CHART ================= */
+  /* ================= LOAD DATA ================= */
 
   useEffect(() => {
+    const loadData = async () => {
+      try {
+        setLoadingChart(true);
 
-    axios
-      .get("http://172.30.2.13:5000/api/user-stats", {
-        params: {
-          range,
-          from: fromDate,
-          to: toDate,
-          type: userType,
-        },
-      })
-      .then((res) => setChartData(res.data))
-      .catch(() => console.log("Chart load failed"));
+        const res = await api.get("/user-stats", {
+          params: { range },
+        });
 
-  }, [range, fromDate, toDate, userType]);
+        setStats(res.data.summary);
+        setChartData(res.data.chart);
 
+      } catch (err) {
+        console.error("Dashboard load failed", err);
+      } finally {
+        setLoadingChart(false);
+      }
+    };
 
-  /* ================= LOADING ================= */
+    loadData();
+  }, [range]);
 
-  if (loading) return <DashboardSkeleton />;
+  /* ================= GROWTH CALCULATION ================= */
 
+  const calculateGrowth = () => {
+    if (!chartData || chartData.length < 2) return 0;
+
+    const last = chartData[chartData.length - 1].users;
+    const prev = chartData[chartData.length - 2].users;
+
+    if (prev === 0) return 100;
+    return (((last - prev) / prev) * 100).toFixed(1);
+  };
+
+  const growth = calculateGrowth();
 
   /* ================= UI ================= */
 
   return (
     <>
-
       {/* ================= HEADER ================= */}
 
       <div className="mb-6">
-
-        <h2 className="text-2xl font-bold" style={{ color: "var(--brand-color)" }}>
+        <h2
+          className="text-2xl font-bold"
+          style={{ color: "var(--brand-color)" }}
+        >
           {role === "admin" && "Admin Dashboard"}
-
           {role === "broker" && "Broker Dashboard"}
-
           {role === "client" && "Client Dashboard"}
         </h2>
-
 
         <p className="text-gray-500 text-sm dark:text-gray-300">
           Your current system overview.
         </p>
-
       </div>
-
-
-      {/* ================= FILTER BAR ================= */}
 
       <div className="flex flex-wrap gap-3 mb-6 items-center">
 
@@ -342,45 +304,71 @@ export default function Dashboard() {
       </div>
 
 
-      {/* ================= CHART ================= */}
+      {/* ================= LINE CHART ================= */}
 
       <div className="bg-white rounded-xl shadow-sm p-6 mb-8 dark:bg-neutral-800">
+        <h3 className="text-sm font-medium mb-4 dark:text-gray-300">
+          User Growth
+        </h3>
 
-        <div className="h-[260px]">
+        <div className="h-[260px] relative">
+          {loadingChart && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-gray-500"></div>
+            </div>
+          )}
 
           <ResponsiveContainer width="100%" height="100%">
-
             <LineChart data={chartData}>
-
               <XAxis dataKey="name" />
-
               <Tooltip />
-
               <Line
                 type="monotone"
                 dataKey="users"
-                stroke={"var(--brand-color)"}
+                stroke="var(--brand-color)"
                 strokeWidth={3}
                 dot={false}
+                animationDuration={800}
               />
-
             </LineChart>
-
           </ResponsiveContainer>
-
         </div>
-
       </div>
 
+      {/* ================= STACKED BAR CHART ================= */}
+
+      <div className="bg-white rounded-xl shadow-sm p-6 mb-8 dark:bg-neutral-800">
+        <h3 className="text-sm font-medium mb-4 dark:text-gray-300">
+          Verified vs Unverified
+        </h3>
+
+        <div className="h-[260px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="name" />
+              <Tooltip />
+              <Legend />
+              <Bar
+                dataKey="users"
+                stackId="a"
+                fill="var(--brand-color)"
+                animationDuration={800}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
 
       {/* ================= INFO CARDS ================= */}
 
-      <div className="grid md:grid-cols-3 gap-6 mb-8">
+      <div className="grid md:grid-cols-3 gap-6">
 
         <InfoCard
           icon={<Users size={20} />}
           title="Total Users"
           value={stats?.totalUsers}
+          growth={growth}
           color="indigo"
         />
 
@@ -398,47 +386,47 @@ export default function Dashboard() {
           color="red"
         />
 
-        {/* <InfoCard
-          icon={<Clock size={20} />}
-          title="Session"
-          value={sessionType}
-          sub={expiresIn}
-        /> */}
-
       </div>
-
     </>
   );
 }
 
+/* ================= INFO CARD ================= */
 
-/* ================= COMPONENTS ================= */
-
-
-function InfoCard({ title, value, color, sub, icon }: any) {
+function InfoCard({ title, value, color, icon, growth }: any) {
   return (
-    <div className="bg-white rounded-xl shadow-sm p-6 flex flex-col dark:bg-neutral-800">
-
+    <div className="bg-white rounded-xl shadow-sm p-6 dark:bg-neutral-800">
       <div className="flex items-center gap-2 mb-2">
         <span style={{ color: "var(--brand-color)" }}>{icon}</span>
-        <h4 className="text-gray-500 text-sm dark:text-gray-300">{title}</h4>
+        <h4 className="text-gray-500 text-sm dark:text-gray-300">
+          {title}
+        </h4>
       </div>
 
-      <p
-        className={`
-          text-2xl font-bold mt-2
-          ${color === "green" && "text-green-600"}
-          ${color === "red" && "text-red-600"}
-          ${color === "indigo" && "text-indigo-600"}
-        `}
-      >
-        {value}
-      </p>
+      <div className="flex items-end gap-3">
+        <p
+          className={`
+            text-2xl font-bold
+            ${color === "green" && "text-green-600"}
+            ${color === "red" && "text-red-600"}
+            ${color === "indigo" && "text-indigo-600"}
+          `}
+        >
+          {value}
+        </p>
 
-      {sub && (
-        <p className="text-sm text-gray-300 mt-1 hidden dark:text-gray-300">{sub}</p>
-      )}
-
+        {growth && (
+          <span
+            className={`text-sm font-medium ${Number(growth) >= 0
+              ? "text-green-500"
+              : "text-red-500"
+              }`}
+          >
+            {Number(growth) >= 0 ? "+" : ""}
+            {growth}%
+          </span>
+        )}
+      </div>
     </div>
   );
 }
