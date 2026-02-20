@@ -4,7 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { sendEmailVerification } from "firebase/auth";
 import { auth, db } from "../firebase";
 import useTheme from "../hooks/useTheme";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { setAppTitle } from "../utils/appTitle";
 
 export default function Auth() {
@@ -138,7 +138,6 @@ export default function Auth() {
 
     // ---------------- REGISTER ----------------
     const handleRegister = async () => {
-
         if (!firstName || !lastName || !email || !password || !confirm) {
             setToast({
                 type: "error",
@@ -158,16 +157,16 @@ export default function Auth() {
         try {
             setLoading(true);
 
-            await register(email, password, role);
 
-            const fullName = `${firstName.trim()} ${lastName.trim()}`;
+            const trimmedEmail = email.trim();
 
-            await setDoc(doc(db, "users", auth.currentUser!.uid), {
-                name: fullName,
-                email,
+            await register(
+                trimmedEmail,
+                password,
                 role,
-                createdAt: new Date(),
-            });
+                firstName,
+                lastName
+            );
 
             setToast({
                 type: "success",
@@ -178,41 +177,38 @@ export default function Auth() {
             setMode("login");
             setFirstName("");
             setLastName("");
+            setEmail("");
             setPassword("");
             setConfirm("");
 
         } catch (err: any) {
+            console.error("REGISTER ERROR:", err);
 
             if (err.code === "auth/email-already-in-use") {
                 setToast({
                     type: "error",
                     message: "This email is already registered. Please log in.",
                 });
-            }
-            else if (err.code === "auth/weak-password") {
+            } else if (err.code === "auth/weak-password") {
                 setToast({
                     type: "error",
                     message: "Password should be at least 6 characters.",
                 });
-            }
-            else if (err.code === "auth/invalid-email") {
+            } else if (err.code === "auth/invalid-email") {
                 setToast({
                     type: "error",
                     message: "Please enter a valid email address.",
                 });
-            }
-            else {
+            } else {
                 setToast({
                     type: "error",
                     message: "Registration failed. Try again.",
                 });
             }
-
         } finally {
             setLoading(false);
         }
     };
-
 
     return (
         <div
