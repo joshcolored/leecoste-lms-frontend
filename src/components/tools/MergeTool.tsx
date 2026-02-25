@@ -264,5 +264,10 @@ export default function MergeTool() {
         )}
       </div>
     </div>
+    
+        <div className="mt-6">
+        <PrivacyBadge />
+      </div>
+
   )
 }
