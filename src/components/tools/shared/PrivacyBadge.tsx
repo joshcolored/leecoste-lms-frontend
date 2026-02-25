@@ -1,9 +1,7 @@
 import { Github } from 'lucide-react'
-import { Capacitor } from '@capacitor/core'
 
 export default function PrivacyBadge() {
-  // Only show this footer in the native APK version
-  if (!Capacitor.isNativePlatform()) return null
+
 
   return (
     <div className="mt-16 pt-8 border-t border-gray-100 dark:border-zinc-900 flex flex-col items-center gap-6 animate-in fade-in duration-700">
