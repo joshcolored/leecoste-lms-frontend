@@ -8,17 +8,15 @@ import { getStorage } from "firebase/storage";
 import { getDatabase } from "firebase/database";
 import { getAuth } from "firebase/auth";
 
-
-
-/* Firebase Config */
+/* Firebase Config (from env) */
 const firebaseConfig = {
-  apiKey: "AIzaSyCPHj9Kj6QAq6MS-5zS68DG1iOTitfnYR8",
-  authDomain: "authsytem-979f3.firebaseapp.com",
-  projectId: "authsytem-979f3",
-  storageBucket: "authsytem-979f3.firebasestorage.app", // ✅ fixed
-  messagingSenderId: "318182159987",
-  appId: "1:318182159987:web:274b77b7ec0cd4e2dedc06",
-  databaseURL:"https://authsytem-979f3-default-rtdb.firebaseio.com"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL
 };
 
 /* Initialize App */
@@ -36,3 +34,4 @@ export const storage = getStorage(app);
 
 /* Session-only persistence */
 setPersistence(auth, browserSessionPersistence);
+
