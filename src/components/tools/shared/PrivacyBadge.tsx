@@ -16,7 +16,7 @@ export default function PrivacyBadge() {
             <Github size={14} /> Support
           </a>
           <span className="opacity-20">•</span>
-          <p className="opacity-60">Made by <span className="text-rose-500/80">potatameister</span></p>
+          <p className="opacity-60">Powered by <span className="text-[var(--brand-color)]">PaperKnife</span></p>
         </div>
       </div>
     </div>
