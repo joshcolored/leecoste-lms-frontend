@@ -26,7 +26,8 @@
     "recharts": "^3.7.0",
     "tesseract.js": "^7.0.0",
     "ua-parser-js": "^2.0.9",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.0",
+    "vite-plugin-pwa": "^1.2.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
