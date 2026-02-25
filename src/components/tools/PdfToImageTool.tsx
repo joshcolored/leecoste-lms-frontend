@@ -1,0 +1,324 @@
+import { useState, useRef } from 'react'
+import { Image as ImageIcon, Lock, Loader2, ArrowRight, X, ArrowBigLeft } from 'lucide-react'
+import JSZip from 'jszip'
+import { useNavigate } from "react-router-dom"
+import { getPdfMetaData, loadPdfDocument, unlockPdf } from '../../utils/pdfHelpers'
+import { addActivity } from '../../utils/recentActivity'
+import SuccessState from './shared/SuccessState'
+import PrivacyBadge from './shared/PrivacyBadge'
+
+type ImageFormat = 'jpg' | 'png'
+type PdfData = { file: File, thumbnail?: string, pageCount: number, isLocked: boolean, pdfDoc?: any, password?: string }
+
+export default function PdfToImageTool() {
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [pdfData, setPdfData] = useState<PdfData | null>(null)
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null)
+  const [format, setFormat] = useState<ImageFormat>('jpg')
+  const [customFileName, setCustomFileName] = useState('paperknife-images')
+  const [unlockPassword, setUnlockPassword] = useState('')
+  const navigate = useNavigate()
+  const handleUnlock = async () => {
+    if (!pdfData || !unlockPassword) return
+    setIsProcessing(true)
+    const result = await unlockPdf(pdfData.file, unlockPassword)
+    if (result.success) {
+      setPdfData({
+        ...pdfData,
+        isLocked: false,
+        pageCount: result.pageCount,
+        pdfDoc: result.pdfDoc,
+        thumbnail: result.thumbnail,
+        password: unlockPassword
+      })
+      setCustomFileName(`${pdfData.file.name.replace('.pdf', '')}-images`)
+    } else {
+      alert('Incorrect password')
+    }
+    setIsProcessing(false)
+  }
+
+  const handleFile = async (file: File) => {
+    if (file.type !== 'application/pdf') return
+    setIsProcessing(true)
+    try {
+      const meta = await getPdfMetaData(file)
+      if (meta.isLocked) {
+        setPdfData({ file, pageCount: 0, isLocked: true })
+      } else {
+        const pdfDoc = await loadPdfDocument(file)
+        setPdfData({ file, pageCount: meta.pageCount, isLocked: false, pdfDoc, thumbnail: meta.thumbnail })
+        setCustomFileName(`${file.name.replace('.pdf', '')}-images`)
+      }
+    } catch (err) {
+      console.error(err)
+      alert('Error processing PDF')
+    } finally {
+      setIsProcessing(false)
+      setDownloadUrl(null)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  const convertToImages = async () => {
+    if (!pdfData || !pdfData.pdfDoc) return
+    setIsProcessing(true)
+    setProgress(0)
+    await new Promise(resolve => setTimeout(resolve, 100))
+    try {
+      const zip = new JSZip()
+      const scale = 2.0
+      for (let i = 1; i <= pdfData.pageCount; i++) {
+        const page = await pdfData.pdfDoc.getPage(i)
+        const viewport = page.getViewport({ scale })
+        const canvas = document.createElement('canvas')
+        const context = canvas.getContext('2d')
+        if (!context) continue
+        canvas.height = viewport.height
+        canvas.width = viewport.width
+        await page.render({ canvasContext: context, viewport }).promise
+        const imgData = canvas.toDataURL(
+          format === 'png' ? 'image/png' : 'image/jpeg',
+          0.8
+        )
+        const base64Data = imgData.split(',')[1]
+        const padNum = i.toString().padStart(Math.max(2, pdfData.pageCount.toString().length), '0')
+        zip.file(`${customFileName}-${padNum}.${format}`, base64Data, { base64: true })
+        setProgress(Math.round((i / pdfData.pageCount) * 100))
+      }
+      const zipBlob = await zip.generateAsync({ type: 'blob' })
+      const url = URL.createObjectURL(zipBlob)
+      setDownloadUrl(url)
+      addActivity({
+        name: `${customFileName}.zip`,
+        tool: 'PDF to Image',
+        size: zipBlob.size,
+        resultUrl: url
+      })
+    } catch (error: any) {
+      alert(`Error: ${error.message}`)
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  const ActionButton = () => (
+    <button
+      onClick={convertToImages}
+      disabled={isProcessing}
+      className="w-full bg-[var(--brand-color)] hover:bg-[var(--brand-color)]/90 text-white font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3 shadow-xl shadow-[var(--brand-color)]/20 py-4 rounded-2xl text-sm md:p-6 md:rounded-3xl md:text-xl"
+    >
+      {isProcessing ? (
+        <>
+          <Loader2 className="animate-spin" size={18} />
+          {progress}%
+        </>
+      ) : (
+        <>
+          Convert to Images
+          <ArrowRight size={18} />
+        </>
+      )}
+    </button>
+  )
+
+  return (
+    <div className="min-h-screen scroll-smooth">
+
+      <button
+        onClick={() => navigate(-1)}
+        className="
+    mb-6
+    inline-flex
+    items-center
+    gap-2
+    px-4
+    py-2
+    text-[var(--brand-color)]
+    dark:text-white
+    rounded-xl
+    bg-gray-100
+    dark:bg-neutral-900
+    border
+    border-[var(--brand-color)]
+    dark:border-neutral-800
+    hover:bg-[var(--brand-color)]
+    hover:text-white
+    dark:hover:text-[var(--brand-color)]
+    transition-all
+    duration-200
+    font-bold
+  "
+      >
+        <ArrowBigLeft size={18} />
+        Back
+      </button>
+      <header className="mb-6">
+        <h1 className="text-2xl md:text-3xl font-semibold tracking-tight dark:text-white flex items-center gap-3">
+          <span className="w-9 h-9 rounded-2xl bg-[var(--brand-color)] text-white flex items-center justify-center">
+            <ImageIcon size={18} />
+          </span>
+          PDF to Image
+        </h1>
+        <p className="text-xs md:text-sm text-gray-400 mt-2 font-medium">
+          Convert document pages into high-quality images.
+        </p>
+      </header>
+
+      <input
+        type="file"
+        accept=".pdf"
+        className="hidden"
+        ref={fileInputRef}
+        onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
+      />
+
+      {!pdfData ? (
+        <div
+          className="w-full border-gray-100  dark:bg-neutral-800 rounded-lg p-12 text-center transition-all cursor-default group"
+        >
+         <div onClick={() => !isProcessing && fileInputRef.current?.click()} className="border-2 border-dashed border-gray-500 bg-neutral-100 mb-8 dark:bg-neutral-700 dark:border-neutral-300 max-w-4xl mx-auto p-8 space-y-8 dark:border-neutral-800 rounded-lg p-16 text-center cursor-pointer hover:bg-rose-50 dark:hover:bg-neutral-800 transition">
+          <div className="w-20 h-20 bg-[var(--brand-color)]/10 dark:bg-[var(--brand-color)]/20 text-[var(--brand-color)] rounded-full flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
+            <ImageIcon size={32} />
+          </div>
+          <h3 className="text-xl font-bold dark:text-white mb-2">Select PDF</h3>
+          <p className="text-sm text-gray-400">Tap to start converting</p>
+        </div>
+        </div>
+      ) : pdfData.isLocked ? (
+        <div className="max-w-md mx-auto">
+          <div className="bg-white dark:bg-neutral-800 p-8 rounded-[2.5rem] border border-gray-100 dark:border-white/5 text-center shadow-2xl">
+            <div className="w-16 h-16 bg-[var(--brand-color)]/10 dark:bg-[var(--brand-color)]/30 text-[var(--brand-color)] rounded-full flex items-center justify-center mx-auto mb-6">
+              <Lock size={32} />
+            </div>
+            <h3 className="text-2xl font-bold mb-4 dark:text-white">Protected File</h3>
+            <input
+              type="password"
+              value={unlockPassword}
+              onChange={(e) => setUnlockPassword(e.target.value)}
+              placeholder="Password"
+              className="w-full bg-gray-50 dark:bg-black rounded-2xl px-6 py-4 border border-transparent focus:border-[var(--brand-color)] outline-none font-bold text-center mb-6 dark:text-white"
+            />
+            <button
+              onClick={handleUnlock}
+              disabled={!unlockPassword || isProcessing}
+              className="w-full bg-[var(--brand-color)] hover:bg-[var(--brand-color)]/90 text-white p-4 rounded-2xl font-black uppercase text-xs transition-all active:scale-95 disabled:opacity-50"
+            >
+              Unlock
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          <div className="bg-white dark:bg-neutral-800 p-6 rounded-lg border border-gray-100 dark:border-white/5 flex items-center gap-6 shadow-sm">
+            <div className="w-16 h-20 bg-gray-50 dark:bg-zinc-800 rounded-md overflow-hidden shrink-0 border border-gray-100 dark:border-zinc-800 flex items-center justify-center">
+              {pdfData.thumbnail ? (
+                <img src={pdfData.thumbnail} className="w-full h-full object-cover" alt="PDF Preview" />
+              ) : (
+                <ImageIcon size={20} className="text-[var(--brand-color)]" />
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-bold text-sm truncate dark:text-white">{pdfData.file.name}</h3>
+              <p className="text-[10px] text-gray-400 uppercase font-black tracking-widest">
+                {pdfData.pageCount} Pages • {(pdfData.file.size / (1024 * 1024)).toFixed(1)} MB
+              </p>
+            </div>
+            <button
+              onClick={() => setPdfData(null)}
+              className="p-2 text-gray-400 hover:text-[var(--brand-color)] transition-colors"
+            >
+              <X size={20} />
+            </button>
+          </div>
+
+          <div className="bg-white dark:bg-neutral-800 p-8 rounded-lg border border-gray-100 dark:border-white/5 space-y-8 shadow-sm">
+            {!downloadUrl ? (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400 mb-4 px-1">
+                      Image Format
+                    </label>
+                    <div className="grid grid-cols-2 gap-3">
+                      {(['jpg', 'png'] as const).map(fmt => (
+                        <button
+                          key={fmt}
+                          onClick={() => setFormat(fmt)}
+                          className={`p-4 rounded-2xl border-2 transition-all flex flex-col items-center hover:border-[var(--brand-color)] hover:bg-[var(--brand-color)]/5 ${format === fmt
+                              ? 'border-[var(--brand-color)] bg-[var(--brand-color)]/10 shadow-lg shadow-[var(--brand-color)]/20'
+                              : 'border-gray-100 dark:border-white/10'
+                            }`}
+                        >
+                          <span className={`font-black uppercase text-[12px] ${format === fmt
+                              ? 'text-[var(--brand-color)]'
+                              : 'text-gray-500 dark:text-gray-400'
+                            }`}>
+                            {fmt}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400 mb-3 px-1">
+                      Output ZIP Name
+                    </label>
+                    <input
+                      type="text"
+                      value={customFileName}
+                      onChange={(e) => setCustomFileName(e.target.value)}
+                      className="w-full bg-gray-50 dark:bg-neutral-900 rounded-xl px-4 py-3 border border-transparent focus:border-[var(--brand-color)] outline-none font-bold text-sm dark:text-white"
+                    />
+                  </div>
+                </div>
+
+                {isProcessing && (
+                  <div className="space-y-4">
+                    <div className="w-full bg-gray-100 dark:bg-zinc-800 h-3 rounded-full overflow-hidden shadow-inner">
+                      <div
+                        className="bg-[var(--brand-color)] h-full transition-all rounded-full shadow-lg"
+                        style={{ width: `${progress}%` }}
+                      />
+                    </div>
+                    <p className="text-[12px] text-center font-black text-gray-500 uppercase tracking-widest animate-pulse">
+                      Converting Pages to Images...
+                    </p>
+                  </div>
+                )}
+
+                <ActionButton />
+              </>
+            ) : (
+              <SuccessState
+                message="Images Ready!"
+                downloadUrl={downloadUrl}
+                fileName={`${customFileName}.zip`}
+                onStartOver={() => {
+                  setDownloadUrl(null)
+                  setProgress(0)
+                  setPdfData(null)
+                  setIsProcessing(false)
+                }}
+                showPreview={false}
+              />
+            )}
+            <button
+              onClick={() => {
+                setPdfData(null)
+                setIsProcessing(false)
+              }}
+              className="w-full py-2 text-[10px] font-black uppercase text-gray-300 hover:text-[var(--brand-color)] transition-colors"
+            >
+              Close File
+            </button>
+          </div>
+        </div>
+      )}
+      <PrivacyBadge />
+    </div>
+  )
+}

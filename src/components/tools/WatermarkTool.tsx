@@ -1,0 +1,433 @@
+import { useState, useRef } from 'react'
+import { Type, Lock, Loader2, Palette, Eye, ArrowBigLeft, Check, X } from 'lucide-react'
+import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib'
+import { useNavigate } from "react-router-dom"
+import { getPdfMetaData, unlockPdf, loadPdfDocument } from '../../utils/pdfHelpers'
+import { addActivity } from '../../utils/recentActivity'
+import SuccessState from './shared/SuccessState'
+import PrivacyBadge from './shared/PrivacyBadge'
+
+// ---------- Minimal local toast (replacing sonner) ----------
+type Toast = {
+  id: number
+  type: 'success' | 'error'
+  message: string
+}
+
+function useLocalToast() {
+  const [toasts, setToasts] = useState<Toast[]>([])
+
+  const show = (type: Toast['type'], message: string) => {
+    const id = Date.now()
+    setToasts(prev => [...prev, { id, type, message }])
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id))
+    }, 3000)
+  }
+
+  const Toasts = () => (
+    <div className="fixed top-[80px] right-4 z-[9999] space-y-2 max-w-sm">
+      {toasts.map(t => (
+        <div
+          key={t.id}
+          className={`px-4 py-3 rounded-xl shadow-lg text-sm font-medium flex items-center gap-2 animate-in slide-in-from-right-2 fade-in duration-200 ${
+            t.type === 'error'
+              ? 'bg-rose-600 text-white'
+              : 'bg-emerald-600 text-white'
+          }`}
+        >
+          {t.type === 'error' ? (
+            <X size={16} className="shrink-0" />
+          ) : (
+            <Check size={16} className="shrink-0" />
+          )}
+          <span>{t.message}</span>
+        </div>
+      ))}
+    </div>
+  )
+
+  return {
+    Toasts,
+    toastError: (m: string) => show('error', m),
+    toastSuccess: (m: string) => show('success', m),
+  }
+}
+
+type WatermarkPdfData = { file: File, pageCount: number, isLocked: boolean, password?: string, pdfDoc?: any, thumbnail?: string }
+
+export default function WatermarkTool() {
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const navigate = useNavigate()
+  const { Toasts, toastError, toastSuccess } = useLocalToast()
+  
+  const [pdfData, setPdfData] = useState<WatermarkPdfData | null>(null)
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null)
+  const [customFileName, setCustomFileName] = useState('paperknife-watermarked')
+  const [unlockPassword, setUnlockPassword] = useState('')
+  const [text, setText] = useState('CONFIDENTIAL')
+  const [opacity, setOpacity] = useState(0.3)
+  const [fontSize, setFontSize] = useState(50)
+  const [rotation, setRotation] = useState(-45)
+  const [color, setColor] = useState('#000000')
+
+  const handleUnlock = async () => {
+    if (!pdfData || !unlockPassword) return
+    setIsProcessing(true)
+    const result = await unlockPdf(pdfData.file, unlockPassword)
+    if (result.success) {
+      setPdfData({ 
+        ...pdfData, 
+        isLocked: false, 
+        pageCount: result.pageCount, 
+        password: unlockPassword, 
+        pdfDoc: result.pdfDoc, 
+        thumbnail: result.thumbnail 
+      })
+      setCustomFileName(`${pdfData.file.name.replace('.pdf', '')}-watermarked`)
+      toastSuccess('PDF unlocked successfully!')
+    } else {
+      toastError('Incorrect password')
+    }
+    setIsProcessing(false)
+  }
+
+  const handleFile = async (file: File) => {
+    if (file.type !== 'application/pdf') {
+      toastError('Please select a PDF file')
+      return
+    }
+    setIsProcessing(true)
+    try {
+      const meta = await getPdfMetaData(file)
+      if (meta.isLocked) {
+        setPdfData({ file, pageCount: 0, isLocked: true })
+      } else {
+        const pdfDoc = await loadPdfDocument(file)
+        setPdfData({ 
+          file, 
+          pageCount: meta.pageCount, 
+          isLocked: false, 
+          pdfDoc, 
+          thumbnail: meta.thumbnail 
+        })
+        setCustomFileName(`${file.name.replace('.pdf', '')}-watermarked`)
+        toastSuccess('PDF loaded successfully!')
+      }
+    } catch (err) {
+      console.error(err)
+      toastError('Error processing PDF')
+    } finally {
+      setIsProcessing(false)
+      setDownloadUrl(null)
+    }
+  }
+
+  const hexToRgb = (hex: string) => {
+    const r = parseInt(hex.slice(1, 3), 16) / 255
+    const g = parseInt(hex.slice(3, 5), 16) / 255
+    const b = parseInt(hex.slice(5, 7), 16) / 255
+    return rgb(r, g, b)
+  }
+
+  const applyWatermark = async () => {
+    if (!pdfData) return
+    setIsProcessing(true)
+    await new Promise(resolve => setTimeout(resolve, 100))
+    try {
+      const arrayBuffer = await pdfData.file.arrayBuffer()
+      const pdfDoc = await PDFDocument.load(arrayBuffer, {
+        password: pdfData.password || undefined,
+        ignoreEncryption: true
+      } as any)
+      const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
+      const pages = pdfDoc.getPages()
+      const watermarkColor = hexToRgb(color)
+
+      pages.forEach(page => {
+        const { width, height } = page.getSize()
+        page.drawText(text, {
+          x: width / 2,
+          y: height / 2,
+          size: fontSize,
+          font,
+          color: watermarkColor,
+          opacity,
+          rotate: degrees(rotation)
+        })
+      })
+
+      const pdfBytes = await pdfDoc.save()
+      const blob = new Blob([pdfBytes as any], { type: 'application/pdf' })
+      const url = URL.createObjectURL(blob)
+      setDownloadUrl(url)
+      addActivity({
+        name: `${customFileName}.pdf`,
+        tool: 'Watermark',
+        size: blob.size,
+        resultUrl: url
+      })
+      toastSuccess('Watermark applied successfully!')
+    } catch (error: any) {
+      toastError(`Error: ${error.message}`)
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  const ActionButton = () => (
+    <button 
+      onClick={applyWatermark} 
+      disabled={isProcessing || !text} 
+      className="w-full bg-[var(--brand-color)] hover:bg-[var(--brand-color)]/90 text-white font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-50 py-4 rounded-2xl text-sm md:p-6 md:rounded-3xl md:text-xl flex items-center justify-center gap-3 shadow-lg shadow-[var(--brand-color)]/20"
+    >
+      {isProcessing ? <Loader2 className="animate-spin" size={20} /> : <Type size={20} />}
+      Apply Watermark
+    </button>
+  )
+
+  return (
+    <div className="min-h-screen scroll-smooth">
+      <button
+        onClick={() => navigate(-1)}
+        className="
+        mb-6
+        inline-flex
+        items-center
+        gap-2
+        px-4
+        py-2
+        text-[var(--brand-color)]
+        dark:text-white
+        rounded-xl
+        bg-gray-100
+        dark:bg-neutral-900
+        border
+        border-[var(--brand-color)]
+        dark:border-neutral-800
+        hover:bg-[var(--brand-color)]
+        hover:text-white
+        dark:hover:text-[var(--brand-color)]
+        transition-all
+        duration-200
+        font-bold
+      "
+      >
+        <ArrowBigLeft size={18} />
+        Back
+      </button>
+      
+      <header className="mb-6">
+        <h1 className="text-2xl md:text-3xl font-semibold tracking-tight dark:text-white flex items-center gap-3">
+          <span className="w-9 h-9 rounded-2xl bg-[var(--brand-color)] text-white flex items-center justify-center">
+            <Type size={18} />
+          </span>
+          Watermark
+        </h1>
+        <p className="text-xs md:text-sm text-gray-400 mt-2 font-medium">
+          Add secure text overlays to your documents locally.
+        </p>
+      </header>
+
+      <input 
+        type="file" 
+        accept=".pdf" 
+        className="hidden" 
+        ref={fileInputRef} 
+        onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} 
+      />
+      
+      {!pdfData ? (
+        <div className="w-full border-gray-100 dark:bg-neutral-800 rounded-lg p-12 text-center transition-all cursor-default group">
+          <div 
+            onClick={() => !isProcessing && fileInputRef.current?.click()} 
+            className="border-2 border-dashed border-gray-500 bg-neutral-100 mb-8 dark:bg-neutral-700 dark:border-neutral-300 max-w-4xl mx-auto p-8 space-y-8 dark:border-neutral-800 rounded-lg p-16 text-center cursor-pointer hover:bg-[var(--brand-color)]/5 dark:hover:bg-[var(--brand-color)]/10 transition-all"
+          >
+            <div className="w-20 h-20 bg-[var(--brand-color)] text-white rounded-full flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
+              <Type size={32} />
+            </div>
+            <h3 className="text-xl font-bold dark:text-white mb-2">Select PDF</h3>
+            <p className="text-sm text-gray-400">Tap to start watermarking</p>
+          </div>
+        </div>
+      ) : pdfData.isLocked ? (
+        <div className="max-w-md mx-auto relative z-[100]">
+          <div className="bg-white dark:bg-zinc-900 p-8 rounded-[2.5rem] border border-gray-100 dark:border-white/5 text-center shadow-2xl">
+            <div className="w-16 h-16 bg-[var(--brand-color)]/10 dark:bg-[var(--brand-color)]/30 text-[var(--brand-color)] rounded-full flex items-center justify-center mx-auto mb-6">
+              <Lock size={32} />
+            </div>
+            <input 
+              type="password" 
+              value={unlockPassword} 
+              onChange={(e) => setUnlockPassword(e.target.value)} 
+              placeholder="Password" 
+              className="w-full bg-gray-50 dark:bg-black rounded-xl px-4 py-4 border border-transparent focus:border-[var(--brand-color)] outline-none font-bold text-center mb-4 dark:text-white" 
+            />
+            <button 
+              onClick={handleUnlock} 
+              disabled={!unlockPassword || isProcessing} 
+              className="w-full bg-[var(--brand-color)] hover:bg-[var(--brand-color)]/90 text-white p-4 rounded-2xl font-black uppercase text-xs transition-all active:scale-95 disabled:opacity-50"
+            >
+              Unlock
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in duration-500">
+          <div className="lg:col-span-2 space-y-6">
+            {/* Live Preview */}
+            <div className="bg-white dark:bg-zinc-900 p-6 rounded-[2rem] border border-gray-100 dark:border-white/5 shadow-sm overflow-hidden flex flex-col items-center">
+              <div className="flex justify-between items-center w-full mb-4 px-2">
+                <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-400 flex items-center gap-2">
+                  <Eye size={12}/> Live Preview
+                </h4>
+              </div>
+              <div className="relative aspect-[3/4] w-full max-w-[300px] bg-white border border-gray-100 dark:border-zinc-800 rounded-xl overflow-hidden shadow-inner">
+                {pdfData.thumbnail ? (
+                  <img src={pdfData.thumbnail} className="w-full h-full object-contain opacity-50" alt="PDF Preview" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-gray-100">
+                    <Type size={64} />
+                  </div>
+                )}
+                <div 
+                  className="absolute inset-0 flex items-center justify-center pointer-events-none select-none overflow-hidden"
+                  style={{ 
+                    color, 
+                    opacity,
+                    transform: `rotate(${rotation}deg)`,
+                    fontSize: `${fontSize / 3}px`,
+                    fontWeight: '900',
+                    textAlign: 'center',
+                    lineHeight: '1'
+                  }}
+                >
+                  {text}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <div className="bg-white dark:bg-zinc-900 p-8 rounded-[2rem] border border-gray-100 dark:border-white/5 shadow-sm space-y-6">
+              {!downloadUrl ? (
+                <>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-gray-400 mb-3">Watermark Text</label>
+                    <input 
+                      type="text" 
+                      value={text} 
+                      onChange={(e) => setText(e.target.value)} 
+                      className="w-full bg-gray-50 dark:bg-black rounded-xl px-4 py-3 border border-transparent focus:border-[var(--brand-color)] outline-none font-bold text-sm dark:text-white" 
+                    />
+                  </div>
+                 
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-black uppercase text-gray-400">Appearance</label>
+                      <Palette size={14} className="text-gray-300" />
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="col-span-2">
+                        <label className="block text-[8px] font-black uppercase text-gray-400 mb-2">Color</label>
+                        <div className="flex gap-2 flex-wrap">
+                          {['#F43F5E', '#3B82F6', '#10B981', '#F59E0B', '#000000'].map(c => (
+                            <button 
+                              key={c} 
+                              onClick={() => setColor(c)}
+                              className={`w-8 h-8 rounded-full border-2 transition-all hover:border-[var(--brand-color)] hover:scale-105 ${color === c ? 'border-zinc-900 dark:border-white scale-110 ring-2 ring-[var(--brand-color)]' : 'border-transparent'}`}
+                              style={{ backgroundColor: c }}
+                            />
+                          ))}
+                          <input 
+                            type="color" 
+                            value={color} 
+                            onChange={(e) => setColor(e.target.value)} 
+                            className="w-8 h-8 rounded-full overflow-hidden border-none p-0 cursor-pointer bg-transparent hover:ring-2 hover:ring-[var(--brand-color)]" 
+                          />
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <label className="block text-[8px] font-black uppercase text-gray-400 mb-2">
+                          Opacity ({Math.round(opacity * 100)}%)
+                        </label>
+                        <input 
+                          type="range" 
+                          min="0.1" 
+                          max="1" 
+                          step="0.1" 
+                          value={opacity} 
+                          onChange={(e) => setOpacity(parseFloat(e.target.value))} 
+                          className="w-full accent-[var(--brand-color)]" 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[8px] font-black uppercase text-gray-400 mb-2">
+                          Size ({fontSize}px)
+                        </label>
+                        <input 
+                          type="range" 
+                          min="10" 
+                          max="200" 
+                          step="1" 
+                          value={fontSize} 
+                          onChange={(e) => setFontSize(parseInt(e.target.value))} 
+                          className="w-full accent-[var(--brand-color)]" 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[8px] font-black uppercase text-gray-400 mb-2">
+                          Rotation ({rotation}°)
+                        </label>
+                        <input 
+                          type="range" 
+                          min="-180" 
+                          max="180" 
+                          step="5" 
+                          value={rotation} 
+                          onChange={(e) => setRotation(parseInt(e.target.value))} 
+                          className="w-full accent-[var(--brand-color)]" 
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-gray-400 mb-3">Output Filename</label>
+                    <input 
+                      type="text" 
+                      value={customFileName} 
+                      onChange={(e) => setCustomFileName(e.target.value)} 
+                      className="w-full bg-gray-50 dark:bg-black rounded-xl px-4 py-3 border border-transparent focus:border-[var(--brand-color)] outline-none font-bold text-sm dark:text-white" 
+                    />
+                  </div>
+
+                  <ActionButton />
+                </>
+              ) : (
+                <SuccessState 
+                  message="Watermark Applied Successfully!" 
+                  downloadUrl={downloadUrl} 
+                  fileName={`${customFileName}.pdf`} 
+                  onStartOver={() => setDownloadUrl(null)} 
+                />
+              )}
+              <button 
+                onClick={() => setPdfData(null)} 
+                className="w-full py-2 text-[10px] font-black uppercase text-gray-300 hover:text-[var(--brand-color)] transition-colors"
+              >
+                Close File
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      <PrivacyBadge />
+      
+      <Toasts />
+    </div>
+  )
+}
