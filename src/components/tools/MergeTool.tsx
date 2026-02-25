@@ -1,6 +1,7 @@
 import { useState, useRef } from "react"
 import { Upload, X, Loader2, Eye, ArrowBigLeft, Layers } from "lucide-react"
 import { PDFDocument } from "pdf-lib"
+import PrivacyBadge from './shared/PrivacyBadge'
 import PdfPreview from "./PdfPreview"
 import { useNavigate } from "react-router-dom"
 type PdfFile = {
@@ -119,7 +120,7 @@ export default function MergeTool() {
           Merge PDF
         </h1>
         <p className="text-xs md:text-sm text-gray-400 mt-2 font-medium">
-         Combine multiple PDF files into one document. Processed entirely on your device.
+          Combine multiple PDF files into one document. Processed entirely on your device.
         </p>
       </header>
       <div className="relative items-center bg-white mt-4 p-12 bg-gray-50 rounded-xl
@@ -262,12 +263,14 @@ export default function MergeTool() {
             onProcess={() => setPreviewFile(null)}
           />
         )}
+
       </div>
-    </div>
-    
-        <div className="mt-6">
+      <div className="mt-6">
         <PrivacyBadge />
       </div>
+
+    </div>
+
 
   )
 }
